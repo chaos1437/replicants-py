@@ -1,4 +1,5 @@
 from collections import namedtuple
+import json
 
 Interaction = \
     namedtuple('Interaction',
@@ -22,6 +23,44 @@ class WorldMap:
 
         except IndexError:
             return False
+    
+    def _move(self, first_cell, another_cell):
+        temp = first_cell.contains
+
+        if another_cell.contains != None:
+            another_cell.x = first_cell.x
+            another_cell.y = first_cell.y
+
+        self.contains = another_cell.contains
+        
+        if temp != None:
+            temp.x = another_cell.x
+            temp.y = another_cell.y
+
+        another_cell.contains = temp
+    
+    def move(self, x, y, x1, y1):
+        
+        self._move(self.map[y][x], self.map[y1][x1])
+    
+
+    def get_json(self):
+        json_map = []
+        for y in range(self.height):
+            row = []
+            for x in range(self.width):
+                cell = self.map[y][x]
+                cell_data = {
+                    "x": cell.x,
+                    "y": cell.y,
+                    "energy": cell.energy,
+                    "contains": str(cell.contains) if cell.contains else None
+                }
+                row.append(cell_data)
+            json_map.append(row)
+        return json.dumps(json_map)
+
+
 
 
 #Ячейка пространства на карте
@@ -31,22 +70,6 @@ class Cell:
         self.y = y
         self.contains=contains
         self.energy = energy
-    
-
-    def move(self, another_cell):
-        temp = self.contains
-
-        if another_cell.contains != None:
-            another_cell.x = self.x
-            another_cell.y = self.y
-
-        self.contains = another_cell.contains
-        
-        if temp != None:
-            temp.x = another_cell.x
-            temp.y = another_cell.y
-
-        another_cell.contains = temp
     
     def set(self, contains):
         self.contains = contains
