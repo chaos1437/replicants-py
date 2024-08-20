@@ -33,7 +33,9 @@ class World:
 
     def execute_interaction(self, interaction: Interaction):
 
-        pass
+        match interaction.type:
+            case -1:
+                pass
 
 
 class WorldMap:
@@ -57,6 +59,7 @@ class Cell:
         self.x = x
         self.y = y
         self.contains=contains
+        self.energy = 100
     
     def __repr__(self):
         if type(self.contains) == Bot:
@@ -67,8 +70,21 @@ class Cell:
 
     def move(self, another_cell):
         temp = self.contains
+
+        if type(another_cell.contains) == Bot:
+            another_cell.x = self.x
+            another_cell.y = self.y
+
         self.contains = another_cell.contains
+        
+        if type(temp) == Bot:
+            temp.x = another_cell.x
+            temp.y = another_cell.y
+
         another_cell.contains = temp
     
     def set(self, contains):
         self.contains = contains
+        if type(contains) == Bot:
+            contains.x = self.x
+            contains.y = self.y
