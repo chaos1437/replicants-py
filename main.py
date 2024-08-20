@@ -1,41 +1,39 @@
-def interpreter(code, x=0, y=0):
-    registers = [0, 0, 0, 0]
-    current_register = 0
+from world import World, WorldMap
+from replicant import Bot
+from time import sleep
 
-    for command in code:
-        match command:
-            case "+":
-                registers[current_register] += 1
-            
-            case ">":
-                current_register += 1
-                if current_register > 3:
-                    current_register = 0
+alive = []
+
+def render(world):
+    for y in range(world.height):
+        for x in range(world.width):
+            cell = world.map.get_cell(x, world.height - 1 - y)
+            if cell.contains != None:
+                print("@", end='')
+            else:
+                print(' ', end='')
+        print()
+
+
+def event_loop(world):
+    while True:
+        for bot in world.bots:
+            bot.update_vision()
+            bot.run()
         
-            case "<":
-                current_register -= 1
-                if current_register < 0:
-                    current_register = 3
+        world.process_interactions()
+        sleep(0.1)
+        render(world)
+
+        bots = [Bot(world) for _ in range(10)]
+        for bot in bots:
+            if bot.alive:
+                alive.append(bot)
         
-        print(x, y, registers)
-    
-    direction = registers.index(max(registers))
+        for bot in alive:
+            if not bot.alive:
+                alive.remove(bot)
 
-    match direction:
-        case 0:
-            x -= 1
-        case 1:
-            y += 1
-        case 2:
-            x += 1
-        case 3:
-            y -= 1
-    
-    return x, y
-
-x, y = interpreter("+>+>+>+>+")
-print(x, y)
-
-
-
-
+if __name__ == "__main__":
+    world = World(WorldMap(20, 20))
+    event_loop(world)

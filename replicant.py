@@ -176,7 +176,8 @@ class Bot:
 
     @property
     def direction(self):
-        return self.genome.registers.index(max(self.genome.registers[0:5]))
+        if max(self.genome.registers[0:5]) > 0:
+            return self.genome.registers.index(max(self.genome.registers[0:5]))
 
 
     def __str__(self) -> str:

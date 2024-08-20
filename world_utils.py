@@ -17,31 +17,32 @@ class WorldMap:
         self.map = [[Cell(x, y) for x in range(height)] for y in range(width)]
     
     def get_cell(self, x, y):
-
-        try:
+        if 0 <= x < self.width and 0 <= y < self.height:
             return self.map[y][x]
-
-        except IndexError:
-            return False
-    
+        else:
+            return False        
+        
     def _move(self, first_cell, another_cell):
         temp = first_cell.contains
 
-        if another_cell.contains != None:
-            another_cell.x = first_cell.x
-            another_cell.y = first_cell.y
+        if another_cell.contains is not None:
+            another_cell.contains.x = first_cell.x
+            another_cell.contains.y = first_cell.y
 
-        self.contains = another_cell.contains
+        first_cell.contains = another_cell.contains
         
-        if temp != None:
+        if temp is not None:
             temp.x = another_cell.x
             temp.y = another_cell.y
 
         another_cell.contains = temp
     
+
     def move(self, x, y, x1, y1):
         
-        self._move(self.map[y][x], self.map[y1][x1])
+        if self.width - 1 > x1 > 0 and self.height - 1 > y1 > 0:
+
+            self._move(self.map[y][x], self.map[y1][x1])
     
 
     def get_free_cell(self):
@@ -70,6 +71,23 @@ class WorldMap:
         return json.dumps(json_map)
 
 
+
+def get_estimated_coords(interaction):
+
+    match interaction.direction:
+        case 0: #left
+            estimated_x, estimated_y = interaction.bot.x - 1, interaction.bot.y
+        
+        case 1: #up
+            estimated_x, estimated_y = interaction.bot.x, interaction.bot.y + 1
+        
+        case 2: #right
+            estimated_x, estimated_y = interaction.bot.x + 1, interaction.bot.y
+        
+        case 3: #down
+            estimated_x, estimated_y =  interaction.bot.x, interaction.bot.y - 1
+    
+    return estimated_x, estimated_y
 
 
 #Ячейка пространства на карте
