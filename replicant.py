@@ -1,5 +1,5 @@
 import random
-from world import World, Interaction
+from world_utils import Interaction
 
 
 class Genome:
@@ -16,23 +16,26 @@ class Genome:
 
 
     def __init__(self, parent_genome=None):
-        self.program = self.mutate_program(parent_genome.program)
+        self.program = self.mutate_program(parent_genome)
         self.current_register = 0 
 
 
 
-    def mutate_program(self, parent_program):
-        program = parent_program.copy()
+    def mutate_program(self, parent_genome):
+        genome = parent_genome
 
-        if parent_program == None:
+        if genome == None:
             program = [random.choice(self.commands) for i in range(self.program_length)]
+        
+            return program
+
 
         for i in range(self.program_length):
 
             if random.randint(0, 100) < 10: #todo 10% от всего генома имеет шанс мутировать, а не весь геном.
                 program[i] = random.choice[self.commands]
             else:
-                program[i] = parent_program[i]
+                program[i] = genome.program[i]
         
         return program
     
@@ -41,8 +44,15 @@ class Genome:
         if program.count("[") != program.count("]"):
             return False
 
-        return True
+        try:
+            Genome.parse_blocks(program)
+        
+        except IndexError:
+            return False
+        
+        
 
+        return True
 
     @staticmethod
     def parse_blocks(code):
@@ -52,8 +62,14 @@ class Genome:
             if code[i] == '[':
                 opened.append(i)
             elif code[i] == ']':
-                blocks[i] = opened[-1]
-                blocks[opened.pop()] = i
+                if not opened:
+                    raise IndexError
+                start = opened.pop()
+                blocks[i] = start
+                blocks[start] = i
+        if opened:
+            raise IndexError
+        
         return blocks
 
 
@@ -138,7 +154,8 @@ class Bot:
         
     
     def run_genome(self):
-        self.genome.execute(self.genome.program)
+        if self.alive:
+            self.genome.execute(self.genome.program)
 
 
     def update_vision(self):
@@ -153,10 +170,14 @@ class Bot:
     def queue_interaction(self):
         self.update_vision()
 
-        interaction_type = self.genome.registers[11]
+        if self.alive:
+            interaction_type = self.genome.registers[11]
+        
+        else:
+            interaction_type = -1
+
         strength = self.genome.registers[12]
         direction = self.direction
         interaction = Interaction(self, direction, interaction_type, strength)
         self.world.queue_interaction(interaction)
 
-        
