@@ -33,7 +33,7 @@ class Genome:
         for i in range(self.program_length):
 
             if random.randint(0, 100) < 10: #todo 10% от всего генома имеет шанс мутировать, а не весь геном.
-                program[i] = random.choice[self.commands]
+                program[i] = random.choice(self.commands)
             else:
                 program[i] = genome.program[i]
         
