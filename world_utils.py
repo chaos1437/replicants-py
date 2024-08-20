@@ -44,6 +44,15 @@ class WorldMap:
         self._move(self.map[y][x], self.map[y1][x1])
     
 
+    def get_free_cell(self):
+        for y in range(self.height):
+            for x in range(self.width):
+                if self.get_cell(x, y).contains == None:
+                    return self.get_cell(x, y)
+                
+        return False
+    
+
     def get_json(self):
         json_map = []
         for y in range(self.height):
