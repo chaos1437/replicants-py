@@ -26,29 +26,23 @@ class WorldMap:
 
 #Ячейка пространства на карте
 class Cell:
-    def __init__(self, x, y, contains=None):
+    def __init__(self, x, y, contains=None, energy=100):
         self.x = x
         self.y = y
         self.contains=contains
-        self.energy = 100
+        self.energy = energy
     
-    def __repr__(self):
-        if type(self.contains) == Bot:
-            return "#"
-        
-        else:
-            return " "
 
     def move(self, another_cell):
         temp = self.contains
 
-        if type(another_cell.contains) == Bot:
+        if another_cell.contains != None:
             another_cell.x = self.x
             another_cell.y = self.y
 
         self.contains = another_cell.contains
         
-        if type(temp) == Bot:
+        if temp != None:
             temp.x = another_cell.x
             temp.y = another_cell.y
 
@@ -56,6 +50,6 @@ class Cell:
     
     def set(self, contains):
         self.contains = contains
-        if type(contains) == Bot:
+        if contains != None:
             contains.x = self.x
             contains.y = self.y
