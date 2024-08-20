@@ -135,16 +135,20 @@ class Genome:
 class Bot:
     
     def __init__(self, world=None, parent=False):
-        
+        self.world = world
+        self.world.bots.append(self)
+
+
         if parent:
             self.genome = Genome(parent.genome)
             self.energy = parent.energy // 3
             parent.energy -= self.energy
-            self.world = world
+            
 
         else:
             self.genome = Genome(None)
-            self.energy = 255 
+            self.energy = 255
+            self.world.spawn(self)
 
         
         if self.genome.check_program(self.genome.program):
@@ -153,18 +157,30 @@ class Bot:
             self.alive = False
         
     
-    def run_genome(self):
+    def run(self):
         if self.alive:
             self.genome.execute(self.genome.program)
+        self.queue_interaction()
 
 
     def update_vision(self):
-        self.genome.registers[5:9] = self.world.vision_for_bot(self)
+        # vision = self.world.vision_for_bot(self)
+        # self.genome.registers[5] = vision[0]
+        # self.genome.registers[6] = vision[1]
+        # self.genome.registers[7] = vision[2]
+        # self.genome.registers[8] = vision[3]
+        # self.genome.registers[9] = vision[4]
+        pass
+
         
 
     @property
     def direction(self):
         return self.genome.registers.index(max(self.genome.registers[0:5]))
+
+
+    def __str__(self) -> str:
+        return f"Bot( energy={self.energy} )"
     
 
     def queue_interaction(self):
