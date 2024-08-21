@@ -3,7 +3,6 @@ from replicant import Bot
 from time import sleep
 import pygame
 
-alive = []
 
 def render(world):
     for y in range(world.height):
@@ -27,8 +26,6 @@ def pygame_frontend(world):
 
     for y in range(world.height):
         for x in range(world.width):
-            print(x, y)
-  
             cell = world.map.get_cell(x, world.width - y -1)
             if cell.contains is not None:
                 pygame.draw.rect(screen, (0, 0, 0), (x * cell_size, y * cell_size, cell_size, cell_size))
@@ -41,8 +38,11 @@ def pygame_frontend(world):
 
 def event_loop(world):
     while True:
-        if world.tick < 1000:
+        if world.tick < 2:
             bots = [Bot(world) for _ in range(10)]
+            for bot in bots:
+                if bot.alive:
+                    world.bots.append(bot)
 
         for bot in world.bots:
             bot.update_vision()

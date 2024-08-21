@@ -1,4 +1,5 @@
 import random
+random = random.SystemRandom()
 from world_utils import Interaction
 
 
@@ -12,7 +13,7 @@ class Genome:
 
     max_ticks = 1024 #TTL
 
-    program_length = 256
+    program_length = 24
 
 
     def __init__(self, parent_genome=None):
@@ -30,10 +31,11 @@ class Genome:
             return program
 
 
+        program = genome.program
         for i in range(self.program_length):
-
+            
             if random.randint(0, 100) < 10: #todo 10% от всего генома имеет шанс мутировать, а не весь геном.
-                program[i] = random.choice(self.commands)
+                program[i] = random.choice(Genome.commands)
             else:
                 program[i] = genome.program[i]
         
@@ -44,13 +46,8 @@ class Genome:
         if program.count("[") != program.count("]"):
             return False
 
-        try:
-            Genome.parse_blocks(program)
-        
-        except IndexError:
+        if self.parse_blocks(program) == False:
             return False
-        
-        
 
         return True
 
@@ -63,12 +60,12 @@ class Genome:
                 opened.append(i)
             elif code[i] == ']':
                 if not opened:
-                    raise IndexError
+                    return False
                 start = opened.pop()
                 blocks[i] = start
                 blocks[start] = i
         if opened:
-            raise IndexError
+            return False
         
         return blocks
 
@@ -134,33 +131,46 @@ class Genome:
 
 class Bot:
     
-    def __init__(self, world=None, parent=False):
+    def __init__(self, world=None, parent=False, energy=255):
         self.world = world
-        self.world.bots.append(self)
-
+        self.energy = energy
 
         if parent:
             self.genome = Genome(parent.genome)
-            self.energy = parent.energy // 3
-            parent.energy -= self.energy
-            
 
         else:
             self.genome = Genome(None)
-            self.energy = 255
-            self.world.spawn(self)
 
+        self.alive = self.genome.check_program(self.genome.program)
+        print(f"alive {self.alive} бота {self} после инициализации")
+        
         
         if self.genome.check_program(self.genome.program):
-            self.alive = True
-        else:
-            self.alive = False
+            print(self.genome.program, "is valid")
         
-    
+        self.new = True
+
+
+
     def run(self):
+        if self.new:
+            self.genome.registers[11] = -2 #spawn interaction
+            self.new = False
+            self.queue_interaction()
+            return
+
         if self.alive:
-            self.genome.execute(self.genome.program)
-        self.queue_interaction()
+            self.genome.registers[10] = self.energy
+            try:
+                print(f"{self.alive} бота {self} перед execute")
+                self.genome.execute(self.genome.program)
+            
+            except:
+                import pdb; pdb.set_trace()
+            print("run from bot", self, self.genome.registers, self.genome.program)
+            self.queue_interaction()
+            return
+        
 
 
     def update_vision(self):
@@ -180,14 +190,14 @@ class Bot:
             return self.genome.registers.index(max(self.genome.registers[0:5]))
 
 
-    def __str__(self) -> str:
-        return f"Bot( energy={self.energy} )"
+    # def __str__(self) -> str:
+    #     return f"Bot( energy={self.energy} )"
     
 
     def queue_interaction(self):
-        self.update_vision()
 
         if self.alive:
+
             interaction_type = self.genome.registers[11]
         
         else:
@@ -197,4 +207,13 @@ class Bot:
         direction = self.direction
         interaction = Interaction(self, direction, interaction_type, strength)
         self.world.queue_interaction(interaction)
+    
+    def divide(self):
 
+        if self.energy >= 8:
+            i  = self.energy // 3
+
+            self.energy -= i
+            return Bot(self.world, self, i)
+
+        else: return None
