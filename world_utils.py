@@ -74,6 +74,8 @@ class WorldMap:
 
 def get_estimated_coords(interaction):
 
+    estimated_x, estimated_y = interaction.bot.x, interaction.bot.y
+
     match interaction.direction:
         case 0: #left
             estimated_x, estimated_y = interaction.bot.x - 1, interaction.bot.y
