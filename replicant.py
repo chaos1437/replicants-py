@@ -1,6 +1,11 @@
-import random
-random = random.SystemRandom()
+import random ; random = random.SystemRandom()
+
+import logging
+logger = logging.getLogger(__name__)
+
 from world_utils import Interaction
+from copy import deepcopy
+
 
 
 class Genome:
@@ -18,27 +23,20 @@ class Genome:
 
     def __init__(self, parent_genome=None):
         self.program = self.mutate_program(parent_genome)
-        self.current_register = 0 
-
-
+        self.current_register = 0
+        logger.debug(f"Genome initialized with program: {self.program}")
 
     def mutate_program(self, parent_genome):
-        genome = parent_genome
-
-        if genome == None:
-            program = [random.choice(self.commands) for i in range(self.program_length)]
-        
-            return program
-
-
-        program = genome.program
-        for i in range(self.program_length):
-            
-            if random.randint(0, 100) < 10: #todo 10% от всего генома имеет шанс мутировать, а не весь геном.
-                program[i] = random.choice(Genome.commands)
-            else:
-                program[i] = genome.program[i]
-        
+        if parent_genome is None:
+            program = [random.choice(self.commands) for _ in range(self.program_length)]
+            logger.info("New genome created without parent")
+        else:
+            program = deepcopy(parent_genome.program)
+            mutation_rate = 0.1  # 10% mutation rate
+            for i in range(self.program_length):
+                if random.random() < mutation_rate:
+                    program[i] = random.choice(self.commands)
+            logger.info("Genome mutated from parent")
         return program
     
 
@@ -71,7 +69,8 @@ class Genome:
 
 
     def execute(self, program):
-        
+
+        pragram = deepcopy(program)
         blocks = Genome.parse_blocks(program)
         tick = 0
         self.current_register = 0
@@ -130,90 +129,44 @@ class Genome:
 
 
 class Bot:
-    
-    def __init__(self, world=None, parent=False, energy=255):
+    def __init__(self, world=None, parent=None, energy=255):
         self.world = world
         self.energy = energy
-
-        if parent:
-            self.genome = Genome(parent.genome)
-
-        else:
-            self.genome = Genome(None)
-
+        self.genome = Genome(parent.genome if parent else None)
         self.alive = self.genome.check_program(self.genome.program)
-        print(f"alive {self.alive} бота {self} после инициализации")
-        
-        
-        if self.genome.check_program(self.genome.program):
-            print(self.genome.program, "is valid")
-        
-        self.new = True
-
-
+        self.x = self.y = None
+        self.id = id(self)  # Use object id as a unique identifier
+        logger.info(f"Bot {self.id} created with energy {self.energy}")
 
     def run(self):
-        if self.new:
-            self.genome.registers[11] = -2 #spawn interaction
-            self.new = False
-            self.queue_interaction()
-            return
-
-        if self.alive:
+        if self.alive and self.energy > 0:
             self.genome.registers[10] = self.energy
-            try:
-                print(f"{self.alive} бота {self} перед execute")
-                self.genome.execute(self.genome.program)
-            
-            except:
-                import pdb; pdb.set_trace()
-            print("run from bot", self, self.genome.registers, self.genome.program)
+            self.genome.execute(self.genome.program)
             self.queue_interaction()
-            return
-        
-
+            logger.debug(f"Bot {self.id} ran with energy {self.energy}")
+        elif self.energy <= 0:
+            self.alive = False
+            logger.info(f"Bot {self.id} died due to lack of energy")
 
     def update_vision(self):
-        # vision = self.world.vision_for_bot(self)
-        # self.genome.registers[5] = vision[0]
-        # self.genome.registers[6] = vision[1]
-        # self.genome.registers[7] = vision[2]
-        # self.genome.registers[8] = vision[3]
-        # self.genome.registers[9] = vision[4]
+        # Implement vision update logic
         pass
-
-        
 
     @property
     def direction(self):
-        if max(self.genome.registers[0:5]) > 0:
-            return self.genome.registers.index(max(self.genome.registers[0:5]))
-
-
-    # def __str__(self) -> str:
-    #     return f"Bot( energy={self.energy} )"
-    
+        return self.genome.registers.index(max(self.genome.registers[0:5]))
 
     def queue_interaction(self):
-
-        if self.alive:
-
-            interaction_type = self.genome.registers[11]
-        
-        else:
-            interaction_type = -1
-
+        interaction_type = self.genome.registers[11] if self.alive else -1
         strength = self.genome.registers[12]
         direction = self.direction
         interaction = Interaction(self, direction, interaction_type, strength)
         self.world.queue_interaction(interaction)
-    
+
     def divide(self):
-
         if self.energy >= 8:
-            i  = self.energy // 3
-
-            self.energy -= i
-            return Bot(self.world, self, i)
-
-        else: return None
+            energy_for_child = self.energy // 3
+            self.energy -= energy_for_child
+            child = Bot(self.world, self, energy_for_child)
+            return child
+        return None

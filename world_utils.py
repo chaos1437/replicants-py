@@ -97,11 +97,11 @@ class Cell:
     def __init__(self, x, y, contains=None, energy=100):
         self.x = x
         self.y = y
-        self.contains=contains
+        self.contains = contains
         self.energy = energy
     
     def set(self, contains):
         self.contains = contains
-        if contains != None:
+        if contains is not None:
             contains.x = self.x
             contains.y = self.y
