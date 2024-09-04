@@ -87,7 +87,7 @@ def event_loop(world, screen, cell_size, args, top_bots=[]):
                 else:
                     top_bots = sorted(world.bots, key=lambda b: b.age, reverse=True)[:20]
 
-                logger.info(f"Top 20 bots:\n{[f"Age:{bot.age} program:{bot.genome.program}\n" for bot in top_bots]}")
+                logger.info(f"Top 20 bots:\n { "\n".join( [f"Age:{bot.age} program:{bot.genome.program}" for bot in top_bots] )}")
 
         running, paused, selected_bot = pygame_frontend(world, screen, cell_size, paused, selected_bot)
         if not running:
