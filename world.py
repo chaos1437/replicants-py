@@ -37,6 +37,12 @@ class World:
                         }
                     } )
         return json.dumps(world_state)
+    
+    def update_cells_energy(self):
+        for y in self.map.map:
+            for cell in y:
+                cell.energy = min(255, cell.energy + 50)
+
 
     @classmethod
     def from_json(cls, json_data):
@@ -176,7 +182,6 @@ class World:
                 cell = self.map.get_cell(estimated_x, estimated_y)
                 if cell:
                     self.bot_energy_draining(interaction.bot, cell)
-                    logger.debug(f"Bot {interaction.bot.id} got energy from cell at ({estimated_x}, {estimated_y})")
             
             case 4:  # Send info to another bot
                 if interaction.direction != 4:

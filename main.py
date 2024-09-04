@@ -47,6 +47,7 @@ def pygame_frontend(world, screen, cell_size, paused, selected_bot):
         info_text = [
             f"Bot ID: {selected_bot.id}",
             f"Energy: {selected_bot.energy}",
+            f"Age: {selected_bot.age}",
             f"Position: ({selected_bot.x}, {selected_bot.y})",
             f"Program: {selected_bot.genome.program}",
             f"Registers: {selected_bot.genome.registers}"
@@ -64,7 +65,7 @@ def event_loop(world, screen, cell_size, args, top_bots=[]):
 
     while True:
         if not paused:
-            if world.bots == []:
+            if len(world.bots) < round(world.width*world.height / 100 * args.spawn_rate):
                 for _ in range(args.spawn_rate):
                     bot = Bot(world)
                     if bot.alive:
@@ -88,6 +89,9 @@ def event_loop(world, screen, cell_size, args, top_bots=[]):
                     top_bots = sorted(world.bots, key=lambda b: b.age, reverse=True)[:20]
 
                 logger.info(f"Top 20 bots:\n { "\n".join( [f"Age:{bot.age} program:{bot.genome.program}" for bot in top_bots] )}")
+            
+            elif world.tick % 500 == 0:
+                world.update_cells_energy()
 
         running, paused, selected_bot = pygame_frontend(world, screen, cell_size, paused, selected_bot)
         if not running:
@@ -116,12 +120,12 @@ def load_world_state(filename):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Simulation parameters")
-    parser.add_argument('--width', type=int, default=40, help='Width of the world')
-    parser.add_argument('--height', type=int, default=40, help='Height of the world')
+    parser.add_argument('--width', type=int, default=40, help='Width of the world in cells')
+    parser.add_argument('--height', type=int, default=40, help='Height of the world in cells')
     parser.add_argument('--cell_size', type=int, default=10, help='Size of each cell in pixels')
-    parser.add_argument('--wait_time', type=float, default=0, help='Time to wait between ticks')
-    parser.add_argument('--spawn_rate', type=int, default=10, help='How many bots to spawn per tick if no bots are alive')
-    parser.add_argument('--save_file', type=str, default=None, help='File to save and load the world state')
+    parser.add_argument('--wait_time', type=float, default=0, help='Time in seconds to wait between ticks')
+    parser.add_argument('--spawn_rate', type=int, default=10, help="Minimal \% of cells that should be filled with bots")
+    parser.add_argument('--save_file', type=str, default="./default.save", help='File to save and load the world state')
     args = parser.parse_args()
 
     import pygame
