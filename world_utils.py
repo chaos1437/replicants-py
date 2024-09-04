@@ -47,7 +47,7 @@ class WorldMap:
 
     def move(self, x, y, x1, y1):
         if self.width - 1 > x1 > 0 and self.height - 1 > y1 > 0:
-            logger.info(f"Moving from ({x}, {y}) to ({x1}, {y1})")
+            logger.debug(f"Moving from ({x}, {y}) to ({x1}, {y1})")
             self._move(self.map[y][x], self.map[y1][x1])
         else:
             logger.debug(f"Attempted to move outside map bounds: from ({x}, {y}) to ({x1}, {y1})")

@@ -28,14 +28,14 @@ class Genome:
     def mutate_program(self, parent_genome):
         if parent_genome is None:
             program = [random.choice(self.commands) for _ in range(self.program_length)]
-            logger.info("New genome created without parent")
+            logger.debug(f"New genome {program} created without parent")
         else:
             program = deepcopy(parent_genome.program)
             mutation_rate = 0.1  # 10% mutation rate
             for i in range(self.program_length):
                 if random.random() < mutation_rate:
                     program[i] = random.choice(self.commands)
-            logger.info("Genome mutated from parent")
+            logger.debug(f"Genome {program} mutated from parent")
         return program
     
 
@@ -136,7 +136,7 @@ class Bot:
         self.x = self.y = None
         self.age = age
         self.id = id(self)  # Use object id as a unique identifier
-        logger.info(f"Bot {self.id} created with energy {self.energy}")
+        logger.debug(f"Bot {self.id} created with energy {self.energy}")
 
     def run(self):
         if self.alive and self.energy > 0:
@@ -146,7 +146,7 @@ class Bot:
             logger.debug(f"Bot {self.id} ran with energy {self.energy}")
         elif self.energy <= 0:
             self.alive = False
-            logger.info(f"Bot {self.id} died due to lack of energy")
+            logger.debug(f"Bot {self.id} died due to lack of energy")
         
         self.age += 1
 

@@ -65,7 +65,7 @@ class World:
             bot.x, bot.y = free_cell.x, free_cell.y
             self.map.get_cell(bot.x, bot.y).set(bot)
             self.bots.append(bot)
-            logger.info(f"Bot {bot.id} spawned at ({bot.x}, {bot.y})")
+            logger.debug(f"Bot {bot.id} spawned at ({bot.x}, {bot.y})")
             return True
         logger.warning("Failed to spawn bot: no free cells")
         return False
@@ -80,14 +80,20 @@ class World:
                 self.execute_interaction(interaction)
         self.pending_interactions.clear()
         self.tick += 1
-        logger.info(f"Tick {self.tick} completed, interactions processed")
+
+        if self.tick % 100 == 0:
+            logger.info(f"Tick {self.tick} completed, interactions processed")
+
+        else:
+            logger.debug(f"Tick {self.tick} completed, interactions processed")
+
         self.check_consistency()
 
     def remove_dead_bots(self):
         for bot in self.bots:
             if bot.energy <= 0 or not bot.alive:
                 self.remove_bot(bot)
-                logger.info(f"Bot {bot.id} removed due to death or lack of energy")
+                logger.debug(f"Bot {bot.id} removed due to death or lack of energy")
 
     def remove_bot(self, bot):
         cell = self.map.get_cell(bot.x, bot.y)
@@ -96,7 +102,7 @@ class World:
             cell.energy += max(0, bot.energy) // 2
         if bot in self.bots:
             self.bots.remove(bot)
-        logger.info(f"Bot {bot.id} removed from the world")
+        logger.debug(f"Bot {bot.id} removed from the world")
 
     def bot_energy_draining(self, bot, cell):
         energy_transfer = min(cell.energy // 5, 255 - bot.energy)
@@ -120,7 +126,7 @@ class World:
             case -2:  # Spawn
                 self.spawn(interaction.bot)
                 interaction.bot.genome.registers[11] = 0
-                logger.info(f"Bot {interaction.bot.id} spawned")
+                logger.debug(f"Bot {interaction.bot.id} spawned")
             
             case -1:  # Death
                 self.remove_bot(interaction.bot)
@@ -191,12 +197,12 @@ class World:
                         new_bot = interaction.bot.divide()
                         if new_bot:
                             self.spawn(new_bot)
-                            logger.info(f"Bot {interaction.bot.id} divided, creating new Bot {new_bot.id}")
+                            logger.debug(f"Bot {interaction.bot.id} divided, creating new Bot {new_bot.id}")
 
         interaction.bot.energy -= 1
         if interaction.bot.energy <= 0:
             self.remove_bot(interaction.bot)
-            logger.info(f"Bot {interaction.bot.id} removed after interaction due to lack of energy")
+            logger.debug(f"Bot {interaction.bot.id} removed after interaction due to lack of energy")
 
 
     def check_consistency(self):
