@@ -135,13 +135,26 @@ class World:
                         self.map.move(interaction.bot.x, interaction.bot.y, estimated_x, estimated_y)
                         logger.debug(f"Bot {interaction.bot.id} moved to ({estimated_x}, {estimated_y})")
             
-            case 1:  # Replace with another bot
-                if interaction.direction != 4:
+            case 1:  # Replace with another bot OR move
+                if interaction.direction == 4:
+                    cell = self.map.get_cell(interaction.bot.x, interaction.bot.y)
+                    self.bot_energy_draining(interaction.bot, cell)
+                    logger.debug(f"Bot {interaction.bot.id} stayed and drained energy")
+
+                else:
                     estimated_x, estimated_y = get_estimated_coords(interaction)
                     target_cell = self.map.get_cell(estimated_x, estimated_y)
                     if target_cell and target_cell.contains:
                         self.map.move(interaction.bot.x, interaction.bot.y, estimated_x, estimated_y)
                         logger.debug(f"Bot {interaction.bot.id} replaced bot at ({estimated_x}, {estimated_y})")
+
+                    elif target_cell and target_cell.contains == None:
+                        estimated_x, estimated_y = get_estimated_coords(interaction)
+
+                        if self.map.get_cell(estimated_x, estimated_y):
+                            self.map.move(interaction.bot.x, interaction.bot.y, estimated_x, estimated_y)
+                            logger.debug(f"Bot {interaction.bot.id} moved to ({estimated_x}, {estimated_y})")
+
             
             case 2:  # Push energy
                 if interaction.direction != 4:
