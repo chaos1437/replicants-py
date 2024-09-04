@@ -1,6 +1,7 @@
 from collections import namedtuple
 import json
 import logging
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,14 @@ class WorldMap:
     
 
     def get_free_cell(self):
+
+        for _ in range(20): #20 attempts to get random place
+            x = random.randint(0, self.width-1)
+            y = random.randint(0, self.height-1)
+            if self.get_cell(x, y).contains == None:
+                    logger.debug(f"Found free cell at ({x}, {y})")
+                    return self.get_cell(x, y)
+
         for y in range(self.height):
             for x in range(self.width):
                 if self.get_cell(x, y).contains == None:
