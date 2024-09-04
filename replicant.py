@@ -20,18 +20,17 @@ class Genome:
     program_length = 128
 
 
-    def __init__(self, parent_genome=None):
-        self.program = self.mutate_program(parent_genome)
+    def __init__(self, parent_genome=None, mutation_rate=0.05, program_length=128):
+        self.program = self.mutate_program(parent_genome, mutation_rate)
         self.current_register = 0
         logger.debug(f"Genome initialized with program: {self.program}")
 
-    def mutate_program(self, parent_genome):
+    def mutate_program(self, parent_genome, mutation_rate=0.1):
         if parent_genome is None:
             program = [random.choice(self.commands) for _ in range(self.program_length)]
             logger.debug(f"New genome {program} created without parent")
         else:
             program = deepcopy(parent_genome.program)
-            mutation_rate = 0.1  # 10% mutation rate
             for i in range(self.program_length):
                 if random.random() < mutation_rate:
                     program[i] = random.choice(self.commands)
