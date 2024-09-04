@@ -58,7 +58,7 @@ def pygame_frontend(world, screen, cell_size, paused, selected_bot):
     pygame.display.flip()
     return True, paused, selected_bot
 
-def event_loop(world, screen, cell_size, args):
+def event_loop(world, screen, cell_size, args, top_bots=[]):
     paused = False
     selected_bot = None
 
@@ -80,6 +80,15 @@ def event_loop(world, screen, cell_size, args):
             world.process_interactions()
             world.remove_dead_bots()
 
+            if world.tick % 1000 == 0:
+                if top_bots != []:
+                    top_bots = sorted(world.bots + top_bots, key=lambda b: b.age, reverse=True)[:20]
+
+                else:
+                    top_bots = sorted(world.bots, key=lambda b: b.age, reverse=True)[:20]
+
+                logger.info(f"Top 20 bots:\n{[f"Age:{bot.age} program:{bot.genome.program}\n" for bot in top_bots]}")
+
         running, paused, selected_bot = pygame_frontend(world, screen, cell_size, paused, selected_bot)
         if not running:
             logger.info("Exiting event loop")
@@ -87,6 +96,9 @@ def event_loop(world, screen, cell_size, args):
         
         if args.wait_time > 0:
             time.sleep(wait_time)
+    
+
+    return top_bots
 
 
 def save_world_state(world, filename):

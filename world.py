@@ -30,6 +30,7 @@ class World:
                         "x": bot.x,
                         "y": bot.y,
                         "energy": bot.energy,
+                        "age": bot.age,
                         "genome": {
                             "program": bot.genome.program,
                             "registers": bot.genome.registers
@@ -51,6 +52,7 @@ class World:
             bot.y = bot_data["y"]
             bot.genome.program = bot_data["genome"]["program"]
             bot.genome.registers = bot_data["genome"]["registers"]
+            bot.age = bot_data["age"]
             bot.alive = True
             world.map.get_cell(bot.x, bot.y).set(bot)
             world.bots.append(bot)
