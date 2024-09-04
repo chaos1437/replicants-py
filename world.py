@@ -20,20 +20,21 @@ class World:
             "width": self.width,
             "height": self.height,
             "tick": self.tick,
-            "bots": [
-                {
-                    "id": bot.id,
-                    "x": bot.x,
-                    "y": bot.y,
-                    "energy": bot.energy,
-                    "genome": {
-                        "program": bot.genome.program,
-                        "registers": bot.genome.registers
-                    }
-                } for bot in self.bots
-            ],
+            "bots": [],
             "map": self.map.get_json()
         }
+        for bot in self.bots:
+            if bot.alive: 
+                world_state["bots"].append({
+                        "id": bot.id,
+                        "x": bot.x,
+                        "y": bot.y,
+                        "energy": bot.energy,
+                        "genome": {
+                            "program": bot.genome.program,
+                            "registers": bot.genome.registers
+                        }
+                    } )
         return json.dumps(world_state)
 
     @classmethod
