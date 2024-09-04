@@ -128,12 +128,13 @@ class Genome:
 
 
 class Bot:
-    def __init__(self, world=None, parent=None, energy=255):
+    def __init__(self, world=None, parent=None, energy=255, age=0):
         self.world = world
         self.energy = energy
         self.genome = Genome(parent.genome if parent else None)
         self.alive = self.genome.check_program(self.genome.program)
         self.x = self.y = None
+        self.age = age
         self.id = id(self)  # Use object id as a unique identifier
         logger.info(f"Bot {self.id} created with energy {self.energy}")
 
@@ -146,6 +147,8 @@ class Bot:
         elif self.energy <= 0:
             self.alive = False
             logger.info(f"Bot {self.id} died due to lack of energy")
+        
+        self.age += 1
 
     def update_vision(self):
 
