@@ -1,11 +1,10 @@
-import random ; random = random.SystemRandom()
-
+import random
 import logging
-logger = logging.getLogger(__name__)
-
+random = random.SystemRandom()
 from world_utils import Interaction
 from copy import deepcopy
 
+logger = logging.getLogger(__name__)
 
 
 class Genome:
@@ -18,7 +17,7 @@ class Genome:
 
     max_ticks = 1024 #TTL
 
-    program_length = 24
+    program_length = 128
 
 
     def __init__(self, parent_genome=None):
@@ -149,8 +148,18 @@ class Bot:
             logger.info(f"Bot {self.id} died due to lack of energy")
 
     def update_vision(self):
-        # Implement vision update logic
-        pass
+
+        for x, y, register in [(-1, 0, 5), (0, 1, 6), (1, 0, 7), (0, -1, 8)]:
+            
+            if self.world.map.get_cell(self.x + x, self.y + y):
+                if self.world.map.get_cell(self.x + x, self.y + y).contains:
+                    self.genome.registers[register] = 1 #replicant
+                else:
+                    self.genome.registers[register] = 0 #empty
+            else:
+                self.genome.registers[register] = 2 #world_border or
+
+
 
     @property
     def direction(self):
