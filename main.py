@@ -8,6 +8,7 @@ from world import World, WorldMap
 from replicant import Bot, Genome
 import time
 
+
 def pygame_frontend(world, screen, cell_size, paused, selected_bot):
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -37,9 +38,11 @@ def pygame_frontend(world, screen, cell_size, paused, selected_bot):
         for x in range(0, world.width):
             cell = world.map.get_cell(x, world.height - y - 1)
             color = (0, 0, 0) if cell.contains else (200, 200, 200)
-            cell_energy_color = (0, 255, cell.energy if 255 > cell.energy > 0 else 0)
+            cell_energy_color = pygame.Color(255 - cell._energy, 255, 255 - cell._energy)
             pygame.draw.rect(screen, cell_energy_color, (x * cell_size, y * cell_size, cell_size, cell_size))
             pygame.draw.rect(screen, color, (x * cell_size, y * cell_size, cell_size, cell_size), int(cell_size//7.5))
+            if cell.contains:
+                pygame.draw.circle(screen, color, (x * cell_size + cell_size // 2, y * cell_size + cell_size // 2), cell_size//7.5)
 
     if selected_bot:
         font = pygame.font.Font(None, 14)
@@ -58,24 +61,27 @@ def pygame_frontend(world, screen, cell_size, paused, selected_bot):
     pygame.display.flip()
     return True, paused, selected_bot
 
+
+
 def event_loop(world, screen, cell_size, args, top_bots=[]):
     paused = False
     selected_bot = None
 
+        
     while True:
         if not paused:
             if len(world.bots) < round(world.width*world.height / 100 * args.spawn_rate):
                 for _ in range(args.spawn_rate*100):
-                    bot = Bot(world)
+                    bot = Bot()
                     if bot.alive:
                         world.spawn(bot)
-                        logger.debug(f"Spawned new bot at tick {world.tick}")
 
             for bot in world.bots:
-                bot.update_vision()
+                world.update_vision_for_bot(bot)
             
             for bot in world.bots:
                 bot.run()
+                world.queue_interaction(bot.get_interaction())
 
             world.process_interactions()
             world.remove_dead_bots()
@@ -94,7 +100,7 @@ def event_loop(world, screen, cell_size, args, top_bots=[]):
 
                 logger.info("Top 20 bots:\n" + text)
             
-            elif world.tick % 500 == 0:
+            elif world.tick % 250 == 0:
                 world.update_cells_energy()
 
         running, paused, selected_bot = pygame_frontend(world, screen, cell_size, paused, selected_bot)
@@ -104,7 +110,7 @@ def event_loop(world, screen, cell_size, args, top_bots=[]):
         
         if args.wait_time > 0:
             time.sleep(args.wait_time)
-    
+        
 
     return top_bots
 
@@ -122,6 +128,10 @@ def load_world_state(filename):
     logger.info(f"World state loaded from {filename}")
     return world
 
+def wrapper_bot_run(bot):
+    bot.run()
+    return bot
+
 if __name__ == "__main__":
     parser = configargparse.ArgParser(description="Simulation parameters", default_config_files=["simulation_settings.ini"])
     parser.add('-c', '--config', is_config_file=True, help='Path to the configuration file')
@@ -134,11 +144,16 @@ if __name__ == "__main__":
     parser.add('-pl', '--program_length', type=int, default=64, help='Length of the bot program(genome)')
     parser.add('-mt', '--max_ticks', type=int, default=512, help='Maximum number of command executions for 1 bot run per world tick')
     parser.add('-log', '--log_level', type=str, default="INFO", choices=["INFO", "DEBUG", "WARNING", "CRITICAL"], help='Log level')
+    parser.add("--log_file", type=str, default="", help='Path to the log file')
     parser.add('-s', '--save_file', type=str, default="./default.save", help='File to save and load the world state')
     args = parser.parse_args()
 
 
-    logging.basicConfig(level=args.log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    if args.log_file != "":
+        logging.basicConfig(level=args.log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', filemode='a',filename=args.log_file, datefmt='%d/%m/%y %H:%M')
+    
+    else:
+        logging.basicConfig(level=args.log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', datefmt='%d/%m/%y %H:%M')
 
     import pygame
     
@@ -174,6 +189,7 @@ if __name__ == "__main__":
     screen = pygame.display.set_mode((screen_width, screen_height))
     pygame.display.set_caption("Simulation")
     logger.info(f"Pygame window initialized with size {screen_width}x{screen_height}")
+    logger.info(f"World genome parameters:{world.bot_genome_data}")
 
     event_loop(world, screen, cell_size, args)
 
