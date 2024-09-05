@@ -1,12 +1,11 @@
 import logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 import json
 import os
-import argparse
+import configargparse
 from world import World, WorldMap
-from replicant import Bot
+from replicant import Bot, Genome
 import time
 
 def pygame_frontend(world, screen, cell_size, paused, selected_bot):
@@ -40,7 +39,7 @@ def pygame_frontend(world, screen, cell_size, paused, selected_bot):
             color = (0, 0, 0) if cell.contains else (200, 200, 200)
             cell_energy_color = (0, 255, cell.energy if 255 > cell.energy > 0 else 0)
             pygame.draw.rect(screen, cell_energy_color, (x * cell_size, y * cell_size, cell_size, cell_size))
-            pygame.draw.rect(screen, color, (x * cell_size, y * cell_size, cell_size, cell_size), 1)
+            pygame.draw.rect(screen, color, (x * cell_size, y * cell_size, cell_size, cell_size), int(cell_size//7.5))
 
     if selected_bot:
         font = pygame.font.Font(None, 14)
@@ -66,7 +65,7 @@ def event_loop(world, screen, cell_size, args, top_bots=[]):
     while True:
         if not paused:
             if len(world.bots) < round(world.width*world.height / 100 * args.spawn_rate):
-                for _ in range(args.spawn_rate):
+                for _ in range(args.spawn_rate*100):
                     bot = Bot(world)
                     if bot.alive:
                         world.spawn(bot)
@@ -88,7 +87,12 @@ def event_loop(world, screen, cell_size, args, top_bots=[]):
                 else:
                     top_bots = sorted(world.bots, key=lambda b: b.age, reverse=True)[:20]
 
-                logger.info(f"Top 20 bots:\n { "\n".join( [f"Age:{bot.age} program:{bot.genome.program}" for bot in top_bots] )}")
+                
+                text = ""
+                for bot in top_bots:
+                    text += f"Age:{bot.age} program:{bot.genome.program}\n"
+
+                logger.info("Top 20 bots:\n" + text)
             
             elif world.tick % 500 == 0:
                 world.update_cells_energy()
@@ -99,7 +103,7 @@ def event_loop(world, screen, cell_size, args, top_bots=[]):
             break
         
         if args.wait_time > 0:
-            time.sleep(wait_time)
+            time.sleep(args.wait_time)
     
 
     return top_bots
@@ -119,27 +123,51 @@ def load_world_state(filename):
     return world
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Simulation parameters")
-    parser.add_argument('--width', type=int, default=40, help='Width of the world in cells')
-    parser.add_argument('--height', type=int, default=40, help='Height of the world in cells')
-    parser.add_argument('--cell_size', type=int, default=10, help='Size of each cell in pixels')
-    parser.add_argument('--wait_time', type=float, default=0, help='Time in seconds to wait between ticks')
-    parser.add_argument('--spawn_rate', type=int, default=10, help="Minimal \% of cells that should be filled with bots")
-    parser.add_argument('--save_file', type=str, default="./default.save", help='File to save and load the world state')
+    parser = configargparse.ArgParser(description="Simulation parameters", default_config_files=["simulation_settings.ini"])
+    parser.add('-c', '--config', is_config_file=True, help='Path to the configuration file')
+    parser.add('--width', type=int, default=40, help='Width of the world in cells')
+    parser.add('--height', type=int, default=40, help='Height of the world in cells')
+    parser.add('-cs', '--cell_size', type=int, default=10, help='Size of each cell in pixels')
+    parser.add('-wt', '--wait_time', type=float, default=0, help='Time in seconds to wait between ticks')
+    parser.add('-sr','--spawn_rate', type=int, default=10, help="Minimal %% of cells that should be filled with bots")
+    parser.add('-mr', '--mutation_rate', type=float, default=0.01, help='Mutation rate for bot genomes')
+    parser.add('-pl', '--program_length', type=int, default=64, help='Length of the bot program(genome)')
+    parser.add('-mt', '--max_ticks', type=int, default=512, help='Maximum number of command executions for 1 bot run per world tick')
+    parser.add('-log', '--log_level', type=str, default="INFO", choices=["INFO", "DEBUG", "WARNING", "CRITICAL"], help='Log level')
+    parser.add('-s', '--save_file', type=str, default="./default.save", help='File to save and load the world state')
     args = parser.parse_args()
 
-    import pygame
 
+    logging.basicConfig(level=args.log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    import pygame
+    
     logger.info("Starting simulation")
-    if args.save_file:
-        if os.path.exists(args.save_file):
-            world = load_world_state(args.save_file)
+    
+
+    if os.path.exists(args.save_file):
+        world = load_world_state(args.save_file)
+        if world.bot_genome_data != None:
+                Genome.mutation_rate = world.bot_genome_data["mutation_rate"]
+                Genome.program_length = world.bot_genome_data["program_length"]
+                Genome.max_ticks = world.bot_genome_data["max_ticks"]
+        
         else:
-            world = World(WorldMap(args.width, args.height))
+            Genome.mutation_rate = args.mutation_rate
+            Genome.program_length = args.program_length
+            Genome.max_ticks = args.max_ticks
+            world.bot_genome_data = {"mutation_rate": args.mutation_rate, "program_length": args.program_length, "max_ticks": args.max_ticks}
+
     else:
         world = World(WorldMap(args.width, args.height))
+        Genome.mutation_rate = args.mutation_rate
+        Genome.program_length = args.program_length
+        Genome.max_ticks = args.max_ticks
+        world.bot_genome_data = {"mutation_rate": args.mutation_rate, "program_length": args.program_length, "max_ticks": args.max_ticks}
+
 
     pygame.init()
+
     cell_size = args.cell_size
     screen_width = world.width * cell_size
     screen_height = world.height * cell_size

@@ -13,6 +13,7 @@ class World:
         self.tick = tick
         self.bots = []
         self.map = world_map
+        self.bot_genome_data = None #using when saving the world state
         logger.info(f"World initialized with size {self.width}x{self.height}")
 
     def to_json(self):
@@ -20,6 +21,7 @@ class World:
             "width": self.width,
             "height": self.height,
             "tick": self.tick,
+            "bot_genome_data": self.bot_genome_data,
             "bots": [],
             "map": self.map.get_json()
         }
