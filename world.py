@@ -157,6 +157,10 @@ class World:
                     cell = self.map.get_cell(interaction.bot.x, interaction.bot.y)
                     self.bot_energy_draining(interaction.bot, cell)
                     logger.debug(f"Bot {interaction.bot.id} stayed and drained energy")
+                
+                elif interaction.direction == -1:
+                    pass
+                
                 else:
                     estimated_x, estimated_y = get_estimated_coords(interaction)
                     if self.map.get_cell(estimated_x, estimated_y):
@@ -168,6 +172,9 @@ class World:
                     cell = self.map.get_cell(interaction.bot.x, interaction.bot.y)
                     self.bot_energy_draining(interaction.bot, cell)
                     logger.debug(f"Bot {interaction.bot.id} stayed and drained energy")
+                
+                elif interaction.direction == -1:
+                    pass
 
                 else:
                     estimated_x, estimated_y = get_estimated_coords(interaction)

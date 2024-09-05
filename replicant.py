@@ -154,7 +154,10 @@ class Bot:
 
     @property
     def direction(self):
-        return self.genome.registers.index(max(self.genome.registers[0:5]))
+        if max(self.genome.registers[0:5]) > 0:
+            return self.genome.registers.index(max(self.genome.registers[0:5]))
+        else:
+            return -1
 
     def get_interaction(self):
         interaction_type = self.genome.registers[11] if self.alive else -1
