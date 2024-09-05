@@ -26,11 +26,9 @@ class WorldMap:
             #logger.debug(f"Getting cell at ({x}, {y})")
             return self.map[y][x]
         else:
-            logger.debug(f"Attempted to get cell outside map bounds: ({x}, {y})")
             return False        
         
     def _move(self, first_cell, another_cell):
-        logger.debug(f"Moving from cell ({first_cell.x}, {first_cell.y}) to ({another_cell.x}, {another_cell.y})")
         temp = first_cell.contains
 
         if another_cell.contains is not None:
@@ -47,11 +45,10 @@ class WorldMap:
     
 
     def move(self, x, y, x1, y1):
-        if self.width - 1 > x1 > 0 and self.height - 1 > y1 > 0:
-            logger.debug(f"Moving from ({x}, {y}) to ({x1}, {y1})")
+        if self.width > x1 >= 0 and self.height > y1 >= 0:
             self._move(self.map[y][x], self.map[y1][x1])
         else:
-            logger.debug(f"Attempted to move outside map bounds: from ({x}, {y}) to ({x1}, {y1})")
+            logger.debug(f"Attempted to move to ({x1}, {y1}) but it's out of bounds")
     
 
     def get_free_cell(self):
@@ -60,13 +57,11 @@ class WorldMap:
             x = random.randint(0, self.width-1)
             y = random.randint(0, self.height-1)
             if self.get_cell(x, y).contains == None:
-                    logger.debug(f"Found free cell at ({x}, {y})")
                     return self.get_cell(x, y)
 
         for y in range(self.height):
             for x in range(self.width):
                 if self.get_cell(x, y).contains == None:
-                    logger.debug(f"Found free cell at ({x}, {y})")
                     return self.get_cell(x, y)
         
         logger.warning("No free cells found")
@@ -74,7 +69,7 @@ class WorldMap:
     
 
     def get_json(self):
-        logger.debug("Generating JSON representation of the map")
+        
         json_map = []
         for y in range(self.height):
             row = []
@@ -83,11 +78,12 @@ class WorldMap:
                 cell_data = {
                     "x": cell.x,
                     "y": cell.y,
-                    "energy": cell.energy,
+                    "energy": cell._energy,
                 }
                 row.append(cell_data)
             json_map.append(row)
         return json.dumps(json_map)
+        
 
     @classmethod
     def from_json(cls, json_data):
@@ -96,7 +92,7 @@ class WorldMap:
         for y, row in enumerate(data):
             for x, cell_data in enumerate(row):
                 cell = world_map.get_cell(x, y)
-                cell.energy = cell_data["energy"]
+                cell._energy = cell_data["energy"]
         return world_map
 
 
@@ -125,13 +121,21 @@ class Cell:
         self.x = x
         self.y = y
         self.contains = contains
-        self.energy = energy
-        logger.debug(f"Cell created at ({x}, {y}) with energy {energy}")
+        self._energy = energy
     
     def set(self, contains):
-        logger.debug(f"Setting contents of cell ({self.x}, {self.y})")
         self.contains = contains
         if contains is not None:
             contains.x = self.x
             contains.y = self.y
-            logger.debug(f"Contents set to {contains} at ({self.x}, {self.y})")
+    
+    def add_energy(self, amount):
+        if self._energy + amount > 255:
+            self._energy = 255
+        elif self._energy + amount < 0:
+            self._energy = 0
+        
+        else:
+            self._energy += amount
+        
+        
