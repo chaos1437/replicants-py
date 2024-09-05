@@ -203,7 +203,8 @@ class World:
                     if cell and cell.contains is None:
                         new_bot = interaction.bot.divide()
                         if new_bot:
-                            self.spawn(new_bot)
+                            cell.set(new_bot)
+                            self.bots.append(new_bot)
                             logger.debug(f"Bot {interaction.bot.id} divided, creating new Bot {new_bot.id}")
 
         interaction.bot.energy -= 1
