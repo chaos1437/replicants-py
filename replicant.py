@@ -12,7 +12,7 @@ class Genome:
 
     unchangable_registers = [5, 6, 7, 8, 10]
 
-    registers = [0 for i in range(24)]
+    
 
     commands = ["+", "-", ">", "<", "[", "]"]
 
@@ -24,6 +24,7 @@ class Genome:
 
 
     def __init__(self, parent_genome=None, program_length=128):
+        self.registers = [0 for i in range(24)]
         self.program = self.mutate_program(parent_genome)
         self.current_register = 0
         logger.debug(f"Genome initialized: {self.program}")
