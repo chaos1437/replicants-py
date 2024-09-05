@@ -1,6 +1,7 @@
 from collections import namedtuple
 import json
 import logging
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +48,21 @@ class WorldMap:
 
     def move(self, x, y, x1, y1):
         if self.width - 1 > x1 > 0 and self.height - 1 > y1 > 0:
-            logger.info(f"Moving from ({x}, {y}) to ({x1}, {y1})")
+            logger.debug(f"Moving from ({x}, {y}) to ({x1}, {y1})")
             self._move(self.map[y][x], self.map[y1][x1])
         else:
             logger.debug(f"Attempted to move outside map bounds: from ({x}, {y}) to ({x1}, {y1})")
     
 
     def get_free_cell(self):
+
+        for _ in range(20): #20 attempts to get random place
+            x = random.randint(0, self.width-1)
+            y = random.randint(0, self.height-1)
+            if self.get_cell(x, y).contains == None:
+                    logger.debug(f"Found free cell at ({x}, {y})")
+                    return self.get_cell(x, y)
+
         for y in range(self.height):
             for x in range(self.width):
                 if self.get_cell(x, y).contains == None:

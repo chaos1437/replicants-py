@@ -13,6 +13,7 @@ class World:
         self.tick = tick
         self.bots = []
         self.map = world_map
+        self.bot_genome_data = None #using when saving the world state
         logger.info(f"World initialized with size {self.width}x{self.height}")
 
     def to_json(self):
@@ -20,21 +21,30 @@ class World:
             "width": self.width,
             "height": self.height,
             "tick": self.tick,
-            "bots": [
-                {
-                    "id": bot.id,
-                    "x": bot.x,
-                    "y": bot.y,
-                    "energy": bot.energy,
-                    "genome": {
-                        "program": bot.genome.program,
-                        "registers": bot.genome.registers
-                    }
-                } for bot in self.bots
-            ],
+            "bot_genome_data": self.bot_genome_data,
+            "bots": [],
             "map": self.map.get_json()
         }
+        for bot in self.bots:
+            if bot.alive: 
+                world_state["bots"].append({
+                        "id": bot.id,
+                        "x": bot.x,
+                        "y": bot.y,
+                        "energy": bot.energy,
+                        "age": bot.age,
+                        "genome": {
+                            "program": bot.genome.program,
+                            "registers": bot.genome.registers
+                        }
+                    } )
         return json.dumps(world_state)
+    
+    def update_cells_energy(self):
+        for y in self.map.map:
+            for cell in y:
+                cell.energy = min(255, cell.energy + 50)
+
 
     @classmethod
     def from_json(cls, json_data):
@@ -50,6 +60,7 @@ class World:
             bot.y = bot_data["y"]
             bot.genome.program = bot_data["genome"]["program"]
             bot.genome.registers = bot_data["genome"]["registers"]
+            bot.age = bot_data["age"]
             bot.alive = True
             world.map.get_cell(bot.x, bot.y).set(bot)
             world.bots.append(bot)
@@ -62,7 +73,7 @@ class World:
             bot.x, bot.y = free_cell.x, free_cell.y
             self.map.get_cell(bot.x, bot.y).set(bot)
             self.bots.append(bot)
-            logger.info(f"Bot {bot.id} spawned at ({bot.x}, {bot.y})")
+            logger.debug(f"Bot {bot.id} spawned at ({bot.x}, {bot.y})")
             return True
         logger.warning("Failed to spawn bot: no free cells")
         return False
@@ -77,14 +88,20 @@ class World:
                 self.execute_interaction(interaction)
         self.pending_interactions.clear()
         self.tick += 1
-        logger.info(f"Tick {self.tick} completed, interactions processed")
+
+        if self.tick % 100 == 0:
+            logger.info(f"Tick {self.tick} completed, interactions processed")
+
+        else:
+            logger.debug(f"Tick {self.tick} completed, interactions processed")
+
         self.check_consistency()
 
     def remove_dead_bots(self):
         for bot in self.bots:
             if bot.energy <= 0 or not bot.alive:
                 self.remove_bot(bot)
-                logger.info(f"Bot {bot.id} removed due to death or lack of energy")
+                logger.debug(f"Bot {bot.id} removed due to death or lack of energy")
 
     def remove_bot(self, bot):
         cell = self.map.get_cell(bot.x, bot.y)
@@ -93,7 +110,7 @@ class World:
             cell.energy += max(0, bot.energy) // 2
         if bot in self.bots:
             self.bots.remove(bot)
-        logger.info(f"Bot {bot.id} removed from the world")
+        logger.debug(f"Bot {bot.id} removed from the world")
 
     def bot_energy_draining(self, bot, cell):
         energy_transfer = min(cell.energy // 5, 255 - bot.energy)
@@ -117,7 +134,7 @@ class World:
             case -2:  # Spawn
                 self.spawn(interaction.bot)
                 interaction.bot.genome.registers[11] = 0
-                logger.info(f"Bot {interaction.bot.id} spawned")
+                logger.debug(f"Bot {interaction.bot.id} spawned")
             
             case -1:  # Death
                 self.remove_bot(interaction.bot)
@@ -134,13 +151,26 @@ class World:
                         self.map.move(interaction.bot.x, interaction.bot.y, estimated_x, estimated_y)
                         logger.debug(f"Bot {interaction.bot.id} moved to ({estimated_x}, {estimated_y})")
             
-            case 1:  # Replace with another bot
-                if interaction.direction != 4:
+            case 1:  # Replace with another bot OR move
+                if interaction.direction == 4:
+                    cell = self.map.get_cell(interaction.bot.x, interaction.bot.y)
+                    self.bot_energy_draining(interaction.bot, cell)
+                    logger.debug(f"Bot {interaction.bot.id} stayed and drained energy")
+
+                else:
                     estimated_x, estimated_y = get_estimated_coords(interaction)
                     target_cell = self.map.get_cell(estimated_x, estimated_y)
                     if target_cell and target_cell.contains:
                         self.map.move(interaction.bot.x, interaction.bot.y, estimated_x, estimated_y)
                         logger.debug(f"Bot {interaction.bot.id} replaced bot at ({estimated_x}, {estimated_y})")
+
+                    elif target_cell and target_cell.contains == None:
+                        estimated_x, estimated_y = get_estimated_coords(interaction)
+
+                        if self.map.get_cell(estimated_x, estimated_y):
+                            self.map.move(interaction.bot.x, interaction.bot.y, estimated_x, estimated_y)
+                            logger.debug(f"Bot {interaction.bot.id} moved to ({estimated_x}, {estimated_y})")
+
             
             case 2:  # Push energy
                 if interaction.direction != 4:
@@ -154,7 +184,6 @@ class World:
                 cell = self.map.get_cell(estimated_x, estimated_y)
                 if cell:
                     self.bot_energy_draining(interaction.bot, cell)
-                    logger.debug(f"Bot {interaction.bot.id} got energy from cell at ({estimated_x}, {estimated_y})")
             
             case 4:  # Send info to another bot
                 if interaction.direction != 4:
@@ -175,12 +204,12 @@ class World:
                         new_bot = interaction.bot.divide()
                         if new_bot:
                             self.spawn(new_bot)
-                            logger.info(f"Bot {interaction.bot.id} divided, creating new Bot {new_bot.id}")
+                            logger.debug(f"Bot {interaction.bot.id} divided, creating new Bot {new_bot.id}")
 
         interaction.bot.energy -= 1
         if interaction.bot.energy <= 0:
             self.remove_bot(interaction.bot)
-            logger.info(f"Bot {interaction.bot.id} removed after interaction due to lack of energy")
+            logger.debug(f"Bot {interaction.bot.id} removed after interaction due to lack of energy")
 
 
     def check_consistency(self):
