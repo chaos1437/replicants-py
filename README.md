@@ -1,11 +1,17 @@
 Life simulation.
 
+**Controls:**
++ Pause - P
++ Set trace(for debugging) - S
++ Get info about bot - Click mouse on it
+
+
 **Features:**
-- *Save/load world state (--save_file)*
+- *Save/load world state*
 - *Minimal working GUI*
 - *Interaction system(easy to add new types)*
-- *Customizable world size*
-
+- *Customizable simulation parameters (via cmdline args or with config file)*
+- *run 'python3 main.py --help'*!
 
 
 **REQUIREMENTS:**
