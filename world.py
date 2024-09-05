@@ -6,13 +6,14 @@ logger = logging.getLogger(__name__)
 
 class World:
     
-    def __init__(self, world_map, tick=0):
+    def __init__(self, world_map, tick=0,):
         self.width = world_map.width
         self.height = world_map.height
         self.pending_interactions = {}
         self.tick = tick
         self.bots = []
         self.map = world_map
+        self.energy_boost = 50
         self.bot_genome_data = None #using when saving the world state
         logger.info(f"World initialized with size {self.width}x{self.height}")
 
@@ -22,6 +23,7 @@ class World:
             "height": self.height,
             "tick": self.tick,
             "bot_genome_data": self.bot_genome_data,
+            "energy_boost": self.energy_boost,
             "bots": [],
             "map": self.map.get_json()
         }
@@ -43,7 +45,9 @@ class World:
     def update_cells_energy(self):
         for y in self.map.map:
             for cell in y:
-                cell.energy = min(255, cell.energy + 50)
+                cell.add_energy(self.energy_boost)
+        
+        logger.debug(f"Added {self.energy_boost} energy to all cells")
 
 
     @classmethod
@@ -51,6 +55,7 @@ class World:
         data = json.loads(json_data)
         world_map = WorldMap.from_json(data["map"])
         world = cls(world_map, data["tick"])
+        world.energy_boost = data["energy_boost"]
         
         
         for bot_data in data["bots"]:
@@ -73,14 +78,12 @@ class World:
             bot.x, bot.y = free_cell.x, free_cell.y
             self.map.get_cell(bot.x, bot.y).set(bot)
             self.bots.append(bot)
-            logger.debug(f"Bot {bot.id} spawned at ({bot.x}, {bot.y})")
             return True
         logger.warning("Failed to spawn bot: no free cells")
         return False
 
     def queue_interaction(self, interaction):
         self.pending_interactions.setdefault(interaction.type, []).append(interaction)
-        logger.debug(f"Interaction queued: {interaction.type} for Bot {interaction.bot.id}")
 
     def process_interactions(self):
         for interaction_type in self.pending_interactions:
@@ -92,8 +95,6 @@ class World:
         if self.tick % 100 == 0:
             logger.info(f"Tick {self.tick} completed, interactions processed")
 
-        else:
-            logger.debug(f"Tick {self.tick} completed, interactions processed")
 
         self.check_consistency()
 
@@ -101,28 +102,24 @@ class World:
         for bot in self.bots:
             if bot.energy <= 0 or not bot.alive:
                 self.remove_bot(bot)
-                logger.debug(f"Bot {bot.id} removed due to death or lack of energy")
 
     def remove_bot(self, bot):
         cell = self.map.get_cell(bot.x, bot.y)
         if cell and cell.contains == bot:
             cell.contains = None
-            cell.energy += max(0, bot.energy) // 2
+            cell.add_energy(max(0, bot.energy) // 2)
         if bot in self.bots:
             self.bots.remove(bot)
-        logger.debug(f"Bot {bot.id} removed from the world")
 
     def bot_energy_draining(self, bot, cell):
-        energy_transfer = min(cell.energy // 5, 255 - bot.energy)
+        energy_transfer = min(cell._energy // 5, 255 - bot.energy)
         bot.energy += energy_transfer
-        cell.energy -= energy_transfer
-        logger.debug(f"Bot {bot.id} drained {energy_transfer} energy from cell at ({cell.x}, {cell.y})")
+        cell.add_energy(-energy_transfer)
 
     def bot_push_energy(self, bot, cell, energy):
-        energy_transfer = min(energy, 255 - cell.energy)
+        energy_transfer = min(energy, 255 - cell._energy)
         bot.energy -= energy_transfer
-        cell.energy += energy_transfer
-        logger.debug(f"Bot {bot.id} pushed {energy_transfer} energy to cell at ({cell.x}, {cell.y})")
+        cell.add_energy(energy_transfer)
 
     def update_vision_for_bot(self, bot):
 
@@ -146,17 +143,14 @@ class World:
             case -2:  # Spawn
                 self.spawn(interaction.bot)
                 interaction.bot.genome.registers[11] = 0
-                logger.debug(f"Bot {interaction.bot.id} spawned")
             
             case -1:  # Death
                 self.remove_bot(interaction.bot)
-                logger.debug(f"Bot {interaction.bot.id} died")
             
             case 0:  # Move
                 if interaction.bot.direction == 4:  # stay
                     cell = self.map.get_cell(interaction.bot.x, interaction.bot.y)
                     self.bot_energy_draining(interaction.bot, cell)
-                    logger.debug(f"Bot {interaction.bot.id} stayed and drained energy")
                 
                 elif interaction.direction == -1:
                     pass
@@ -165,13 +159,11 @@ class World:
                     estimated_x, estimated_y = get_estimated_coords(interaction)
                     if self.map.get_cell(estimated_x, estimated_y):
                         self.map.move(interaction.bot.x, interaction.bot.y, estimated_x, estimated_y)
-                        logger.debug(f"Bot {interaction.bot.id} moved to ({estimated_x}, {estimated_y})")
             
             case 1:  # Replace with another bot OR move
                 if interaction.direction == 4:
                     cell = self.map.get_cell(interaction.bot.x, interaction.bot.y)
                     self.bot_energy_draining(interaction.bot, cell)
-                    logger.debug(f"Bot {interaction.bot.id} stayed and drained energy")
                 
                 elif interaction.direction == -1:
                     pass
@@ -181,14 +173,12 @@ class World:
                     target_cell = self.map.get_cell(estimated_x, estimated_y)
                     if target_cell and target_cell.contains:
                         self.map.move(interaction.bot.x, interaction.bot.y, estimated_x, estimated_y)
-                        logger.debug(f"Bot {interaction.bot.id} replaced bot at ({estimated_x}, {estimated_y})")
 
                     elif target_cell and target_cell.contains == None:
                         estimated_x, estimated_y = get_estimated_coords(interaction)
 
                         if self.map.get_cell(estimated_x, estimated_y):
                             self.map.move(interaction.bot.x, interaction.bot.y, estimated_x, estimated_y)
-                            logger.debug(f"Bot {interaction.bot.id} moved to ({estimated_x}, {estimated_y})")
 
             
             case 2:  # Push energy
@@ -210,7 +200,7 @@ class World:
                     target_cell = self.map.get_cell(estimated_x, estimated_y)
                     if target_cell and target_cell.contains:
                         target_cell.contains.genome.registers[9] = interaction.bot.genome.registers[13]
-                        logger.debug(f"Bot {interaction.bot.id} sent info to bot at ({estimated_x}, {estimated_y})")
+                    
             
             case 5:  # Receive info from another bot
                 pass  # Handled in case 4
@@ -224,12 +214,10 @@ class World:
                         if new_bot:
                             cell.set(new_bot)
                             self.bots.append(new_bot)
-                            logger.debug(f"Bot {interaction.bot.id} divided, creating new Bot {new_bot.id}")
 
         interaction.bot.energy -= 1
         if interaction.bot.energy <= 0:
             self.remove_bot(interaction.bot)
-            logger.debug(f"Bot {interaction.bot.id} removed after interaction due to lack of energy")
 
 
     def check_consistency(self):
@@ -245,5 +233,4 @@ class World:
         if map_bots != list_bots:
             self.bots = list(map_bots)
             logger.warning("Inconsistency detected and corrected in bot list")
-        else:
-            logger.debug("Consistency check passed")
+

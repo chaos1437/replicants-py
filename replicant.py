@@ -27,7 +27,6 @@ class Genome:
         self.registers = [0 for i in range(24)]
         self.program = self.mutate_program(parent_genome)
         self.current_register = 0
-        logger.debug(f"Genome initialized: {self.program}")
 
     def mutate_program(self, parent_genome):
         if parent_genome is None:
@@ -136,21 +135,15 @@ class Bot:
         self.x = self.y = None
         self.age = age
         self.id = id(self)  # Use object id as a unique identifier
-        logger.debug(f"Bot {self.id} created with energy {self.energy}")
 
     def run(self):
         if self.alive and self.energy > 0:
             self.genome.registers[10] = self.energy
             self.genome.execute(self.genome.program)
-            logger.debug(f"Bot {self.id} ran with energy {self.energy}")
         elif self.energy <= 0:
             self.alive = False
-            logger.debug(f"Bot {self.id} died due to lack of energy")
         
         self.age += 1
-
-
-
 
     @property
     def direction(self):
