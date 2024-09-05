@@ -66,16 +66,17 @@ def event_loop(world, screen, cell_size, args, top_bots=[]):
         if not paused:
             if len(world.bots) < round(world.width*world.height / 100 * args.spawn_rate):
                 for _ in range(args.spawn_rate*100):
-                    bot = Bot(world)
+                    bot = Bot()
                     if bot.alive:
                         world.spawn(bot)
                         logger.debug(f"Spawned new bot at tick {world.tick}")
 
             for bot in world.bots:
-                bot.update_vision()
+                world.update_vision_for_bot(bot)
             
             for bot in world.bots:
                 bot.run()
+                world.queue_interaction(bot.get_interaction())
 
             world.process_interactions()
             world.remove_dead_bots()
@@ -121,6 +122,10 @@ def load_world_state(filename):
     world = World.from_json(json_data)
     logger.info(f"World state loaded from {filename}")
     return world
+
+def wrapper_bot_run(bot):
+    bot.run()
+    return bot
 
 if __name__ == "__main__":
     parser = configargparse.ArgParser(description="Simulation parameters", default_config_files=["simulation_settings.ini"])

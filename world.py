@@ -54,7 +54,7 @@ class World:
         
         
         for bot_data in data["bots"]:
-            bot = Bot(world, energy=bot_data["energy"])
+            bot = Bot(energy=bot_data["energy"])
             bot.id = bot_data["id"]
             bot.x = bot_data["x"]
             bot.y = bot_data["y"]
@@ -124,11 +124,23 @@ class World:
         cell.energy += energy_transfer
         logger.debug(f"Bot {bot.id} pushed {energy_transfer} energy to cell at ({cell.x}, {cell.y})")
 
+    def update_vision_for_bot(self, bot):
+
+        for x, y, register in [(-1, 0, 5), (0, 1, 6), (1, 0, 7), (0, -1, 8)]:
+            
+            if self.map.get_cell(bot.x + x, bot.y + y):
+                if self.map.get_cell(bot.x + x, bot.y + y).contains:
+                    bot.genome.registers[register] = 1 #replicant
+                else:
+                    bot.genome.registers[register] = 0 #empty
+            else:
+                bot.genome.registers[register] = 2 #world_border or
+
     def execute_interaction(self, interaction: Interaction):
-        if interaction.bot.energy <= 0 or not interaction.bot.alive:
-            self.remove_bot(interaction.bot)
-            logger.info(f"Bot {interaction.bot.id} removed before interaction due to death or lack of energy")
-            return
+        # if interaction.bot.energy <= 0 or not interaction.bot.alive:
+        #     self.remove_bot(interaction.bot)
+        #     logger.info(f"Bot {interaction.bot.id} removed before interaction due to death or lack of energy")
+        #     return
 
         match interaction.type:
             case -2:  # Spawn
@@ -138,7 +150,7 @@ class World:
             
             case -1:  # Death
                 self.remove_bot(interaction.bot)
-                logger.info(f"Bot {interaction.bot.id} died")
+                logger.debug(f"Bot {interaction.bot.id} died")
             
             case 0:  # Move
                 if interaction.bot.direction == 4:  # stay
