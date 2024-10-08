@@ -1,21 +1,55 @@
 import logging
 from world_utils import *
 from replicant import Bot
+from multiprocessing.managers import BaseManager
+import time
+
 
 logger = logging.getLogger(__name__)
 
+class WorldManager(BaseManager):
+    '''
+    Class thah is used to create a shared world object to be used by multiple processes.
+    '''
+    pass
+
 class World:
     
-    def __init__(self, world_map, tick=0,):
-        self.width = world_map.width
-        self.height = world_map.height
+    def __init__(self, world_map, tick=0, from_json=False):
+        print(world_map, tick, from_json)
+
+        if from_json:
+            self.from_json(from_json)
+            self.width = self.map.width
+            self.height = self.map.height
+
+        else:
+            self.width = world_map.width
+            self.height = world_map.height
+            self.tick = tick
+            self.bots = []
+            self.map = world_map
+            self.energy_boost = 50
+            self.bot_genome_data = None #using when saving the world state
+
+
+        
         self.pending_interactions = {}
-        self.tick = tick
-        self.bots = []
-        self.map = world_map
-        self.energy_boost = 50
-        self.bot_genome_data = None #using when saving the world state
+        
         logger.info(f"World initialized with size {self.width}x{self.height}")
+    
+    def get_bots(self):
+        return self.bots
+
+    def get_width(self):
+        return self.width
+    
+    def get_height(self):
+        return self.height
+
+    def get_tick(self):
+        return self.tick
+
 
     def to_json(self):
         world_state = {
@@ -41,7 +75,8 @@ class World:
                         }
                     } )
         return json.dumps(world_state)
-    
+
+
     def update_cells_energy(self):
         for y in self.map.map:
             for cell in y:
@@ -50,13 +85,12 @@ class World:
         logger.debug(f"Added {self.energy_boost} energy to all cells")
 
 
-    @classmethod
-    def from_json(cls, json_data):
+    def from_json(self, json_data):
         data = json.loads(json_data)
         world_map = WorldMap.from_json(data["map"])
-        world = cls(world_map, data["tick"])
-        world.energy_boost = data["energy_boost"]
-        
+        self.map = world_map
+        self.tick = data["tick"]
+        self.energy_boost = data["energy_boost"]
         
         for bot_data in data["bots"]:
             bot = Bot(energy=bot_data["energy"])
@@ -67,10 +101,9 @@ class World:
             bot.genome.registers = bot_data["genome"]["registers"]
             bot.age = bot_data["age"]
             bot.alive = True
-            world.map.get_cell(bot.x, bot.y).set(bot)
-            world.bots.append(bot)
-        
-        return world
+            self.map.get_cell(bot.x, bot.y).set(bot)
+            self.bots.append(bot)
+
 
     def spawn(self, bot):
         free_cell = self.map.get_free_cell()
@@ -94,6 +127,8 @@ class World:
 
         if self.tick % 100 == 0:
             logger.info(f"Tick {self.tick} completed, interactions processed")
+        
+        logger.debug(f"Tick time: {time.time()}")
 
 
         self.check_consistency()
@@ -235,3 +270,4 @@ class World:
             logger.error("Inconsistency detected in bot list" +  str(map_bots) + "\n" + str(list_bots))
 
 
+WorldManager.register('World', World)

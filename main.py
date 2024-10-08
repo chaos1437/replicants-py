@@ -4,9 +4,10 @@ logger = logging.getLogger(__name__)
 import json
 import os
 import configargparse
-from world import World, WorldMap
+from world import WorldManager, WorldMap 
 from replicant import Bot, Genome
 import time
+import multiprocessing
 
 
 def pygame_frontend(world, screen, cell_size, paused, selected_bot):
@@ -26,7 +27,7 @@ def pygame_frontend(world, screen, cell_size, paused, selected_bot):
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
             x, y = event.pos
-            cell_x, cell_y = x // cell_size, world.height - (y // cell_size) - 1
+            cell_x, cell_y = x // cell_size, world.get_height() - (y // cell_size) - 1
             cell = world.map.get_cell(cell_x, cell_y)
             if cell and cell.contains:
                 selected_bot = cell.contains
@@ -34,9 +35,9 @@ def pygame_frontend(world, screen, cell_size, paused, selected_bot):
 
     screen.fill((255, 255, 255))
 
-    for y in range(0, world.height):
-        for x in range(0, world.width):
-            cell = world.map.get_cell(x, world.height - y - 1)
+    for y in range(0, world.get_height()):
+        for x in range(0, world.get_width()):
+            cell = world.map.get_cell(x, world.get_height() - y - 1)
             color = (0, 0, 0) if cell.contains else (200, 200, 200)
             cell_energy_color = pygame.Color(255 - cell._energy, 255, 255 - cell._energy)
             pygame.draw.rect(screen, cell_energy_color, (x * cell_size, y * cell_size, cell_size, cell_size))
@@ -62,54 +63,69 @@ def pygame_frontend(world, screen, cell_size, paused, selected_bot):
     return True, paused, selected_bot
 
 
+def process_bots_chunk(world, start, end):
+    for i in range(start, end):
+        bot = world.get_bots()[i]
+        bot.run()
+        world.queue_interaction(bot.get_interaction())
+
+def update_vision_chunk(world, start, end):
+    for i in range(start, end):
+        bot = world.get_bots()[i]
+        world.update_vision_for_bot(bot)
 
 def event_loop(world, screen, cell_size, args, top_bots=[]):
     paused = False
     selected_bot = None
 
-        
-    while True:
-        if not paused:
-            if len(world.bots) < round(world.width*world.height / 100 * args.spawn_rate):
-                for _ in range(args.spawn_rate*100):
-                    bot = Bot()
-                    if bot.alive:
-                        world.spawn(bot)
+    num_processes = multiprocessing.cpu_count()
+    with multiprocessing.Pool(processes=num_processes) as pool:
 
-            for bot in world.bots:
-                world.update_vision_for_bot(bot)
-            
-            for bot in world.bots:
-                bot.run()
-                world.queue_interaction(bot.get_interaction())
+        while True:
+            if not paused:
 
-            world.process_interactions()
-            world.remove_dead_bots()
-
-            if world.tick % 1000 == 0:
-                if top_bots != []:
-                    top_bots = sorted(world.bots + top_bots, key=lambda b: b.age, reverse=True)[:20]
-
-                else:
-                    top_bots = sorted(world.bots, key=lambda b: b.age, reverse=True)[:20]
-
+                if len(world.get_bots()) < round(world.get_width()*world.get_height() / 100 * args.spawn_rate):
+                    for _ in range(args.spawn_rate*100):
+                        bot = Bot()
+                        if bot.alive:
+                            world.spawn(bot)
                 
-                text = ""
-                for bot in top_bots:
-                    text += f"Age:{bot.age} program:{bot.genome.program}\n"
+                num_bots = len(world.get_bots())
+                chunk_size = num_bots // num_processes
 
-                logger.info("Top 20 bots:\n" + text)
+                chunks = [(world, i * chunk_size, (i+1) * chunk_size if i < num_processes-1 else num_bots) 
+                          for i in range(num_processes)]
+                
+                pool.starmap(update_vision_chunk, chunks)
+                pool.starmap(process_bots_chunk, chunks)
+
+                world.process_interactions()
+                world.remove_dead_bots()
+
+                if world.tick_proxy % 1000 == 0:
+                    if top_bots != []:
+                        top_bots = sorted(world.get_bots() + top_bots, key=lambda b: b.age, reverse=True)[:20]
+
+                    else:
+                        top_bots = sorted(world.get_bots(), key=lambda b: b.age, reverse=True)[:20]
+
+                    
+                    text = ""
+                    for bot in top_bots:
+                        text += f"Age:{bot.age} program:{bot.genome.program}\n"
+
+                    logger.info("Top 20 bots:\n" + text)
+                
+                elif world.tick_proxy % 250 == 0:
+                    world.update_cells_energy()
+
+            running, paused, selected_bot = pygame_frontend(world, screen, cell_size, paused, selected_bot)
+            if not running:
+                logger.info("Exiting event loop")
+                break
             
-            elif world.tick % 250 == 0:
-                world.update_cells_energy()
-
-        running, paused, selected_bot = pygame_frontend(world, screen, cell_size, paused, selected_bot)
-        if not running:
-            logger.info("Exiting event loop")
-            break
-        
-        if args.wait_time > 0:
-            time.sleep(args.wait_time)
+            if args.wait_time > 0:
+                time.sleep(args.wait_time)
         
 
     return top_bots
@@ -124,7 +140,10 @@ def save_world_state(world, filename):
 def load_world_state(filename):
     with open(filename, 'r') as f:
         json_data = json.load(f)
-    world = World.from_json(json_data)
+
+    manager = WorldManager()
+    manager.start()
+    world = manager.World(None, from_json=json_data)
     logger.info(f"World state loaded from {filename}")
     return world
 
@@ -143,7 +162,7 @@ if __name__ == "__main__":
     parser.add('-mr', '--mutation_rate', type=float, default=0.01, help='Mutation rate for bot genomes')
     parser.add('-pl', '--program_length', type=int, default=64, help='Length of the bot program(genome)')
     parser.add('-mt', '--max_ticks', type=int, default=512, help='Maximum number of command executions for 1 bot run per world tick')
-    parser.add('-log', '--log_level', type=str, default="INFO", choices=["INFO", "DEBUG", "WARNING", "CRITICAL"], help='Log level')
+    parser.add('-log', '--log_level', type=str, default="INFO", choices=["DEBUG", "INFO", "WARNING", "CRITICAL"], help='Log level')
     parser.add("--log_file", type=str, default="", help='Path to the log file')
     parser.add('-s', '--save_file', type=str, default="./default.save", help='File to save and load the world state')
     args = parser.parse_args()
@@ -162,34 +181,37 @@ if __name__ == "__main__":
 
     if os.path.exists(args.save_file):
         world = load_world_state(args.save_file)
-        if world.bot_genome_data != None:
-                Genome.mutation_rate = world.bot_genome_data["mutation_rate"]
-                Genome.program_length = world.bot_genome_data["program_length"]
-                Genome.max_ticks = world.bot_genome_data["max_ticks"]
+        if world.bot_genome_data_proxy != None:
+                Genome.mutation_rate = world.bot_genome_data_proxy["mutation_rate"]
+                Genome.program_length = world.bot_genome_data_proxy["program_length"]
+                Genome.max_ticks = world.bot_genome_data_proxy["max_ticks"]
         
         else:
             Genome.mutation_rate = args.mutation_rate
             Genome.program_length = args.program_length
             Genome.max_ticks = args.max_ticks
-            world.bot_genome_data = {"mutation_rate": args.mutation_rate, "program_length": args.program_length, "max_ticks": args.max_ticks}
+            world.bot_genome_data_proxy = {"mutation_rate": args.mutation_rate, "program_length": args.program_length, "max_ticks": args.max_ticks}
 
     else:
-        world = World(WorldMap(args.width, args.height))
+        manager = WorldManager()
+        manager.start()
+        world = manager.World(WorldMap(args.width, args.height))
         Genome.mutation_rate = args.mutation_rate
         Genome.program_length = args.program_length
         Genome.max_ticks = args.max_ticks
-        world.bot_genome_data = {"mutation_rate": args.mutation_rate, "program_length": args.program_length, "max_ticks": args.max_ticks}
+        world.bot_genome_data_proxy = {"mutation_rate": args.mutation_rate, "program_length": args.program_length, "max_ticks": args.max_ticks}
 
 
     pygame.init()
 
     cell_size = args.cell_size
-    screen_width = world.width * cell_size
-    screen_height = world.height * cell_size
+    print(dir(world))
+    screen_width = world.get_width() * cell_size
+    screen_height = world.get_height() * cell_size
     screen = pygame.display.set_mode((screen_width, screen_height))
     pygame.display.set_caption("Simulation")
     logger.info(f"Pygame window initialized with size {screen_width}x{screen_height}")
-    logger.info(f"World genome parameters:{world.bot_genome_data}")
+    logger.info(f"World genome parameters:{world.bot_genome_data_proxy}")
 
     event_loop(world, screen, cell_size, args)
 
