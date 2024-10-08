@@ -232,5 +232,6 @@ class World:
         
         if map_bots != list_bots:
             self.bots = list(map_bots)
-            logger.warning("Inconsistency detected and corrected in bot list")
+            logger.error("Inconsistency detected in bot list" +  str(map_bots) + "\n" + str(list_bots))
+
 
