@@ -1,3 +1,5 @@
+.venv/
 venv/
 frontend
 __pycache__/
+*.save
