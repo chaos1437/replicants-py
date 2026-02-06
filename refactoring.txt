@@ -1,0 +1,670 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    ПЛАН РЕФАКТОРИНГА ПРОЕКТА REPLICANTS-PY
+═══════════════════════════════════════════════════════════════════════════════
+
+ЦЕЛИ:
+  • Чистый, легко расширяемый код (SOLID, KISS)
+  • Подготовка к мультипроцессорной обработке ботов
+  • Архитектура микросервиса: симуляция отдельно, UI отдельно
+  • Возможность отдавать состояние мира через API (WebSocket, REST, etc.)
+
+АРХИТЕКТУРНАЯ КОНЦЕПЦИЯ:
+  Симуляция = headless микросервис, который:
+    - Проводит тики симуляции
+    - Хранит состояние мира
+    - Предоставляет API для получения состояния
+    - Не зависит от способа отображения
+  
+  Рендеры = отдельные клиенты (pygame, web, console, etc.)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ФАЗА 1: СОЗДАНИЕ СТРУКТУРЫ КАТАЛОГОВ
+───────────────────────────────────────────────────────────────────────────────
+Статус: [ ] Не начато
+
+Цель: Разделить код на логические модули
+
+Новая структура:
+replicants-py/
+├── core/                  # Ядро симуляции (domain logic)
+│   ├── __init__.py
+│   ├── bot.py            # Bot, Genome (из replicant.py)
+│   ├── world.py          # World
+│   └── world_map.py      # WorldMap, Cell
+├── interactions/          # Обработчики взаимодействий
+│   ├── __init__.py
+│   └── handlers.py       # Функции обработки взаимодействий
+├── services/              # Сервисы приложения
+│   ├── __init__.py
+│   ├── simulation_service.py   # Оркестратор симуляции
+│   └── state_provider.py       # API для получения состояния
+├── persistence/           # Сохранение/загрузка
+│   ├── __init__.py
+│   └── serializer.py     # save/load JSON
+├── config/                # Конфигурация
+│   ├── __init__.py
+│   └── settings.py       # GenomeConfig, WorldConfig
+├── renderers/             # ОПЦИОНАЛЬНО: примеры рендеров
+│   ├── pygame_renderer.py      # Legacy pygame UI
+│   └── console_renderer.py     # Простой текстовый вывод
+├── main.py               # Entry point симуляции (headless)
+├── main_pygame.py        # Entry point с pygame (для обратной совместимости)
+└── requirements.txt
+
+Действия:
+  [1] Создать все папки с __init__.py
+  [2] Скопировать существующие файлы как основу (не удалять оригиналы)
+  [3] Добавить в .gitignore: __pycache__/, *.pyc, .pytest_cache/
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ФАЗА 2: ИЗВЛЕЧЕНИЕ БИЗНЕС-ЛОГИКИ (Domain Layer)
+───────────────────────────────────────────────────────────────────────────────
+Статус: [ ] Не начато
+
+Принципы:
+  • SRP: каждый модуль - одна ответственность
+  • DIP: зависимости на абстракции, не на конкретику
+  • Нет упоминаний pygame в core/
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 2.1: Рефакторинг Bot и Genome (core/bot.py)
+───────────────────────────────────────────────────────────────────────────────
+Проблема: Глобальное изменяемое состояние (class variables)
+  - Genome.mutation_rate
+  - Genome.program_length  
+  - Genome.max_ticks
+
+Решение: Передавать конфигурацию через конструктор
+
+Было:
+  class Genome:
+      mutation_rate = 0.01  # глобальная переменная
+      
+Стало:
+  class Genome:
+      def __init__(self, config: GenomeConfig, parent=None):
+          self.config = config
+          self.mutation_rate = config.mutation_rate
+
+Действия:
+  [1] Создать config/settings.py с dataclass GenomeConfig
+  [2] Изменить Genome.__init__ для приема config
+  [3] Обновить Bot для передачи config при создании Genome
+  [4] Убрать все class variables из Genome
+
+Тесты:
+  [ ] Создание Genome с разными конфигами не влияет друг на друга
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 2.2: Рефакторинг WorldMap и Cell (core/world_map.py)
+───────────────────────────────────────────────────────────────────────────────
+Цель: Выделить world_utils.py -> core/world_map.py
+
+Действия:
+  [1] Переместить WorldMap, Cell в core/world_map.py
+  [2] Переместить Interaction в отдельный файл core/interaction.py (value object)
+  [3] Убрать json импорт из domain (переместить в persistence)
+  [4] get_estimated_coords() -> переместить в interactions/utils.py
+
+Принципы:
+  • WorldMap = чистая структура данных
+  • Методы get_cell, move - без побочных эффектов на другие системы
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 2.3: Рефакторинг World (core/world.py)
+───────────────────────────────────────────────────────────────────────────────
+Проблема: World делает слишком много (нарушение SRP)
+  - Управление ботами
+  - Обработка взаимодействий (90 строк match/case)
+  - Сериализация
+  - Энергетика
+  - Проверка консистентности
+
+Решение: Оставить в World только координацию, вынести логику в сервисы
+
+Останется в World:
+  - width, height, tick
+  - bots (список)
+  - map (WorldMap)
+  - pending_interactions (очередь)
+  - Методы координации: spawn, queue_interaction
+
+Выносится:
+  - execute_interaction -> interactions/handlers.py
+  - to_json/from_json -> persistence/serializer.py
+  - update_cells_energy -> services/energy_manager.py (или просто метод)
+  - update_vision_for_bot -> services/vision_provider.py
+
+Действия:
+  [1] Создать заглушки для новых модулей
+  [2] Переместить сериализацию в persistence/serializer.py
+  [3] Упростить World до минимума
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ФАЗА 3: РЕФАКТОРИНГ ОБРАБОТКИ ВЗАИМОДЕЙСТВИЙ (OCP)
+───────────────────────────────────────────────────────────────────────────────
+Статус: [ ] Не начато
+
+Проблема: execute_interaction - 90 строк с match/case на 9 веток
+  - Нарушение OCP: добавление типа = изменение существующего кода
+  - Сложно тестировать
+
+Решение: Вынести каждую ветку в функцию, использовать диспетчеризацию
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 3.1: Создание обработчиков взаимодействий
+───────────────────────────────────────────────────────────────────────────────
+
+Файл: interactions/handlers.py
+
+Типы взаимодействий:
+  -2: Spawn
+  -1: Death
+   0: Move
+   1: Replace
+   2: Push energy
+   3: Get energy
+   4: Send info
+   5: Receive info (обрабатывается в case 4)
+   6+: Divide
+
+Структура:
+  def handle_spawn(world, interaction): ...
+  def handle_death(world, interaction): ...
+  def handle_move(world, interaction): ...
+  def handle_replace(world, interaction): ...
+  def handle_push_energy(world, interaction): ...
+  def handle_get_energy(world, interaction): ...
+  def handle_send_info(world, interaction): ...
+  def handle_divide(world, interaction): ...
+
+  HANDLERS = {
+      -2: handle_spawn,
+      -1: handle_death,
+      0: handle_move,
+      1: handle_replace,
+      2: handle_push_energy,
+      3: handle_get_energy,
+      4: handle_send_info,
+      # 5 - не нужен (обрабатывается в 4)
+  }
+
+  def get_handler(interaction_type):
+      if interaction_type >= 6:
+          return handle_divide
+      return HANDLERS.get(interaction_type)
+
+  def execute_interaction(world, interaction):
+      handler = get_handler(interaction.type)
+      if handler:
+          handler(world, interaction)
+      
+      # Общая логика для всех
+      interaction.bot.energy -= 1
+      if interaction.bot.energy <= 0:
+          world.remove_bot(interaction.bot)
+
+Действия:
+  [1] Создать interactions/handlers.py
+  [2] Вынести каждую ветку из World.execute_interaction в отдельную функцию
+  [3] Создать HANDLERS словарь
+  [4] Реализовать execute_interaction используя диспетчеризацию
+  [5] Обновить World.process_interactions для использования нового обработчика
+
+Тесты:
+  [ ] Каждый handler тестируется отдельно с мок-объектами
+
+Преимущества:
+  ✓ Каждую функцию легко читать (10-15 строк)
+  ✓ Легко тестировать отдельно
+  ✓ Добавить новый тип = добавить функцию в словарь (OCP)
+  ✓ Легко найти баги в конкретном типе взаимодействия
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 3.2: Общие утилиты для взаимодействий
+───────────────────────────────────────────────────────────────────────────────
+
+Файл: interactions/utils.py
+
+Функции:
+  - get_estimated_coords(interaction) -> (x, y)
+  - validate_interaction(world, interaction) -> bool
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ФАЗА 4: СОЗДАНИЕ СИМУЛЯЦИИ КАК СЕРВИСА
+───────────────────────────────────────────────────────────────────────────────
+Статус: [ ] Не начато
+
+Цель: Headless симуляция + API для получения состояния
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 4.1: SimulationService
+───────────────────────────────────────────────────────────────────────────────
+
+Файл: services/simulation_service.py
+
+class SimulationService:
+    """Оркестратор симуляции (headless)"""
+    
+    def __init__(self, world, config):
+        self.world = world
+        self.config = config
+        self.running = False
+    
+    def tick(self):
+        """Один шаг симуляции"""
+        # Подготовка к мультипроцессингу: разделяем на фазы
+        
+        # ФАЗА 1: Спавн новых ботов
+        self._spawn_bots_if_needed()
+        
+        # ФАЗА 2: Обновление vision (READ-ONLY, можно параллелить)
+        for bot in self.world.bots:
+            self.world.update_vision_for_bot(bot)
+        
+        # ФАЗА 3: Выполнение ботов (можно параллелить!)
+        # Каждый бот работает только со своим состоянием
+        for bot in self.world.bots:
+            bot.run()
+        
+        # ФАЗА 4: Сбор взаимодействий (можно параллелить)
+        for bot in self.world.bots:
+            self.world.queue_interaction(bot.get_interaction())
+        
+        # ФАЗА 5: Применение взаимодействий (последовательно!)
+        self.world.process_interactions()
+        self.world.remove_dead_bots()
+        
+        # Периодическое обновление
+        if self.world.tick % 250 == 0:
+            self._update_cells_energy()
+        
+        if self.world.tick % 1000 == 0:
+            self._log_statistics()
+    
+    def run(self, max_ticks=None):
+        """Запуск симуляции"""
+        self.running = True
+        ticks = 0
+        while self.running:
+            self.tick()
+            ticks += 1
+            if max_ticks and ticks >= max_ticks:
+                break
+    
+    def stop(self):
+        """Остановка симуляции"""
+        self.running = False
+
+Действия:
+  [1] Создать SimulationService
+  [2] Переместить логику event_loop из main.py в SimulationService
+  [3] Убрать все упоминания pygame из SimulationService
+
+Преимущества:
+  ✓ Можно запускать без UI
+  ✓ Готово к мультипроцессингу (фазы 2-4)
+  ✓ Легко тестировать симуляцию
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 4.2: StateProvider - API для получения состояния
+───────────────────────────────────────────────────────────────────────────────
+
+Файл: services/state_provider.py
+
+class StateProvider:
+    """Предоставляет состояние мира для рендеров/API"""
+    
+    def __init__(self, world):
+        self.world = world
+    
+    def get_world_state(self) -> dict:
+        """Полное состояние мира для отрисовки"""
+        return {
+            'tick': self.world.tick,
+            'width': self.world.width,
+            'height': self.world.height,
+            'bots': self._get_bots_state(),
+            'cells': self._get_cells_state()
+        }
+    
+    def get_bot_info(self, bot_id) -> dict:
+        """Информация о конкретном боте"""
+        bot = self._find_bot_by_id(bot_id)
+        if not bot:
+            return None
+        
+        return {
+            'id': bot.id,
+            'x': bot.x,
+            'y': bot.y,
+            'energy': bot.energy,
+            'age': bot.age,
+            'genome': {
+                'program': bot.genome.program,
+                'registers': bot.genome.registers
+            }
+        }
+    
+    def get_cell_state(self, x, y) -> dict:
+        """Состояние ячейки"""
+        cell = self.world.map.get_cell(x, y)
+        if not cell:
+            return None
+        
+        return {
+            'x': x,
+            'y': y,
+            'energy': cell._energy,
+            'occupied': cell.contains is not None,
+            'bot_id': cell.contains.id if cell.contains else None
+        }
+    
+    def get_statistics(self) -> dict:
+        """Статистика симуляции"""
+        return {
+            'tick': self.world.tick,
+            'total_bots': len(self.world.bots),
+            'alive_bots': sum(1 for b in self.world.bots if b.alive),
+            'average_age': sum(b.age for b in self.world.bots) / len(self.world.bots) if self.world.bots else 0
+        }
+
+Использование:
+  • Pygame рендер: вызывает get_world_state() каждый кадр
+  • WebSocket сервер: отправляет get_world_state() клиентам
+  • REST API: endpoints для get_bot_info, get_statistics
+
+Действия:
+  [1] Создать StateProvider
+  [2] Реализовать методы get_*
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ФАЗА 5: РЕФАКТОРИНГ ТОЧЕК ВХОДА (main.py)
+───────────────────────────────────────────────────────────────────────────────
+Статус: [ ] Не начато
+
+Цель: Разделить headless симуляцию и UI
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 5.1: main.py - headless симуляция
+───────────────────────────────────────────────────────────────────────────────
+
+Файл: main.py (~50 строк, без pygame)
+
+import logging
+from config.settings import load_config
+from core.world import World
+from core.world_map import WorldMap
+from core.bot import Bot, GenomeConfig
+from services.simulation_service import SimulationService
+from persistence.serializer import WorldSerializer
+
+def main():
+    # Загрузка конфигурации
+    config = load_config()
+    
+    # Настройка логирования
+    setup_logging(config)
+    
+    # Создание/загрузка мира
+    if config.save_file.exists():
+        world = WorldSerializer.load(config.save_file)
+    else:
+        world = create_world(config)
+    
+    # Запуск симуляции
+    service = SimulationService(world, config)
+    
+    try:
+        service.run(max_ticks=config.max_ticks)
+    except KeyboardInterrupt:
+        logger.info("Simulation stopped by user")
+    finally:
+        # Сохранение
+        WorldSerializer.save(world, config.save_file)
+
+if __name__ == "__main__":
+    main()
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 5.2: main_pygame.py - с UI (обратная совместимость)
+───────────────────────────────────────────────────────────────────────────────
+
+Файл: main_pygame.py
+
+import pygame
+from main import load_config, create_world
+from renderers.pygame_renderer import PygameRenderer
+from services.simulation_service import SimulationService
+from services.state_provider import StateProvider
+
+def main():
+    config = load_config()
+    world = create_world(config)
+    
+    # UI
+    pygame.init()
+    renderer = PygameRenderer(config)
+    state_provider = StateProvider(world)
+    
+    # Симуляция с UI
+    service = SimulationService(world, config)
+    
+    running = True
+    paused = False
+    
+    while running:
+        # Обработка событий UI
+        events = renderer.handle_events()
+        if events.quit:
+            running = False
+        if events.pause:
+            paused = not paused
+        
+        # Тик симуляции
+        if not paused:
+            service.tick()
+        
+        # Отрисовка
+        state = state_provider.get_world_state()
+        renderer.render(state)
+
+if __name__ == "__main__":
+    main()
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ФАЗА 6: ПОДГОТОВКА К МУЛЬТИПРОЦЕССИНГУ
+───────────────────────────────────────────────────────────────────────────────
+Статус: [ ] Не начато
+
+Цель: Изолировать выполнение ботов для параллельной обработки
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 6.1: Изоляция Bot.run()
+───────────────────────────────────────────────────────────────────────────────
+
+Проблема: bot.run() может иметь зависимости от world
+
+Решение: bot.run() - чистая функция, без побочных эффектов
+
+Проверка:
+  [1] Bot.run() меняет только self.genome.registers, self.age
+  [2] Не обращается к world напрямую
+  [3] Vision передается через registers перед run()
+
+Тогда можно:
+  from multiprocessing import Pool
+  
+  def process_bot(bot):
+      bot.run()
+      return bot.get_interaction()
+  
+  with Pool() as pool:
+      interactions = pool.map(process_bot, bots)
+
+Действия:
+  [1] Убедиться что Bot.run() не имеет внешних зависимостей
+  [2] Создать wrapper функцию для multiprocessing
+  [3] Добавить опцию в config: use_multiprocessing = False
+  [4] В SimulationService добавить ветку для параллельного выполнения
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ФАЗА 7: ТЕСТЫ И КАЧЕСТВО КОДА
+───────────────────────────────────────────────────────────────────────────────
+Статус: [ ] Не начато
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 7.1: Unit тесты
+───────────────────────────────────────────────────────────────────────────────
+
+tests/
+├── test_genome.py           # Genome.execute(), мутации
+├── test_bot.py              # Bot.run(), divide()
+├── test_world_map.py        # WorldMap, Cell
+├── test_interactions.py     # Каждый handler отдельно
+└── test_simulation.py       # Полный цикл
+
+Критичные тесты:
+  [ ] Genome.execute() корректно выполняет программы
+  [ ] Genome.parse_blocks() правильно парсит []
+  [ ] Bot.divide() корректно делит энергию
+  [ ] Каждый interaction handler работает правильно
+  [ ] save/load сохраняет все состояние
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 7.2: Линтеры и форматтеры
+───────────────────────────────────────────────────────────────────────────────
+
+Установить:
+  pip install black flake8 mypy pytest
+
+Настроить:
+  [1] black - автоформатирование
+  [2] flake8 - проверка стиля
+  [3] mypy - type checking
+  [4] pytest - тесты
+
+Добавить в requirements-dev.txt
+
+═══════════════════════════════════════════════════════════════════════════════
+ШАГ 7.3: Type hints
+───────────────────────────────────────────────────────────────────────────────
+
+Добавить типы везде:
+  def spawn(self, bot: Bot) -> bool:
+  def get_cell(self, x: int, y: int) -> Optional[Cell]:
+  def get_world_state(self) -> dict:
+
+Проверять mypy:
+  mypy core/ services/ interactions/
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ИТОГОВАЯ АРХИТЕКТУРА
+═══════════════════════════════════════════════════════════════════════════════
+
+HEADLESS СИМУЛЯЦИЯ:
+  python main.py --config simulation_settings.ini
+  → Запускает симуляцию без UI
+  → Сохраняет состояние в файл
+  → Можно использовать как микросервис
+
+PYGAME РЕНДЕР:
+  python main_pygame.py
+  → Использует StateProvider для получения состояния
+  → Отрисовывает в pygame
+  → Обратная совместимость
+
+WEBSOCKET СЕРВЕР (будущее):
+  python main_websocket.py --port 8080
+  → Запускает симуляцию
+  → Отдает состояние по WebSocket
+  → Клиенты (веб-страницы) подключаются и рендерят
+
+REST API (будущее):
+  python main_api.py
+  → GET /state - получить состояние
+  → GET /bot/:id - информация о боте
+  → POST /tick - сделать тик
+  → WebSocket /ws - подписка на обновления
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ЧЕКЛИСТ ПО ПРИНЦИПАМ ЧИСТОГО КОДА
+═══════════════════════════════════════════════════════════════════════════════
+
+После каждого изменения проверяй:
+
+[SRP] Каждый модуль имеет одну ответственность
+  ✓ Bot - поведение бота
+  ✓ World - координация
+  ✓ Handlers - обработка взаимодействий
+  ✓ StateProvider - API состояния
+  ✓ SimulationService - оркестрация
+
+[OCP] Расширение через добавление, не изменение
+  ✓ Новый тип взаимодействия = новая функция в HANDLERS
+  ✓ Новый рендер = новый класс, реализующий интерфейс
+
+[DIP] Зависимости на абстракции
+  ✓ SimulationService не знает о pygame
+  ✓ Core не зависит от infrastructure
+
+[ISP] Узкие интерфейсы
+  ✓ StateProvider - только get_* методы
+  ✓ Handlers - функции с одной сигнатурой
+
+[KISS] Простота
+  ✓ Функции < 20 строк
+  ✓ Нет magic numbers
+  ✓ Понятные имена
+
+[DRY] Нет дублирования
+  ✓ Общая логика вынесена в утилиты
+  ✓ Конфигурация в одном месте
+
+═══════════════════════════════════════════════════════════════════════════════
+
+ПРИОРИТЕТЫ ВЫПОЛНЕНИЯ
+═══════════════════════════════════════════════════════════════════════════════
+
+ИТЕРАЦИЯ 1 - Foundation (2-3 часа):
+  [1] Создать структуру каталогов
+  [2] Переместить код в новые модули (без изменений логики)
+  [3] Убедиться что все работает
+
+ИТЕРАЦИЯ 2 - Рефакторинг взаимодействий (2-3 часа):
+  [4] Разбить execute_interaction на handlers
+  [5] Создать HANDLERS диспетчер
+  [6] Тесты для каждого handler
+
+ИТЕРАЦИЯ 3 - Сервисы (2-3 часа):
+  [7] Создать SimulationService
+  [8] Создать StateProvider
+  [9] Убрать глобальное состояние (GenomeConfig)
+
+ИТЕРАЦИЯ 4 - Headless (1-2 часа):
+  [10] Рефакторинг main.py (headless)
+  [11] Создать renderers/pygame_renderer.py
+  [12] main_pygame.py для обратной совместимости
+
+ИТЕРАЦИЯ 5 - Multiprocessing (2-3 часа):
+  [13] Изолировать Bot.run()
+  [14] Добавить параллельное выполнение
+  [15] Тесты производительности
+
+ИТЕРАЦИЯ 6 - Качество (2-3 часа):
+  [16] Type hints
+  [17] Линтеры
+  [18] Документация
+
+═══════════════════════════════════════════════════════════════════════════════
+КОНЕЦ ПЛАНА
+═══════════════════════════════════════════════════════════════════════════════
