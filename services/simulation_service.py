@@ -67,12 +67,16 @@ class SimulationService:
     def _spawn_bots_if_needed(self):
         """Спавн новых ботов если их слишком мало"""
         min_bots = round(self.world.width * self.world.height / 100 * self.config.world.spawn_rate)
-        
-        if len(self.world.bots) < min_bots:
-            for _ in range(self.config.world.spawn_rate * 100):
-                bot = Bot(config=self.world.genome_config)
-                if bot.alive:
-                    self.world.spawn(bot)
+        current = len(self.world.bots)
+        if current >= min_bots:
+            return
+        max_attempts = self.config.world.spawn_rate * 100
+        for _ in range(max_attempts):
+            if len(self.world.bots) >= min_bots:
+                break
+            bot = Bot(config=self.world.genome_config)
+            if bot.alive:
+                self.world.spawn(bot)
     
     def _update_statistics(self):
         """Обновить и залогировать статистику"""

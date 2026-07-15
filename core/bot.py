@@ -1,7 +1,6 @@
 """Боты и их геномы"""
 import random
 import logging
-from copy import deepcopy
 from typing import Optional
 
 random = random.SystemRandom()
@@ -12,6 +11,12 @@ class Genome:
     """Геном бота - программа и регистры"""
     
     unchangable_registers = [5, 6, 7, 8, 10]
+    SENSOR_REGISTERS = [(-1, 0, 5), (0, 1, 6), (1, 0, 7), (0, -1, 8)]
+    REG_ENERGY = 10
+    REG_INTERACTION_TYPE = 11
+    REG_INTERACTION_STRENGTH = 12
+    REG_SEND_DATA = 13
+    REG_RECV_DATA = 9
     commands = ["+", "-", ">", "<", "[", "]"]
     
     def __init__(self, config, parent_genome=None):
@@ -34,7 +39,7 @@ class Genome:
         if parent_genome is None:
             program = [random.choice(self.commands) for _ in range(self.program_length)]
         else:
-            program = deepcopy(parent_genome.program)
+            program = parent_genome.program[:]
             for i in range(self.program_length):
                 if random.random() < self.mutation_rate:
                     program[i] = random.choice(self.commands)
@@ -45,13 +50,13 @@ class Genome:
         if program.count("[") != program.count("]"):
             return False
         
-        if self.parse_blocks(program) is False:
+        if self.parse_blocks(program) is None:
             return False
         
         return True
     
     @staticmethod
-    def parse_blocks(code: list) -> dict | bool:
+    def parse_blocks(code: list) -> dict | None:
         """Парсит блоки [] и возвращает словарь соответствий индексов"""
         opened = []
         blocks = {}
@@ -60,18 +65,17 @@ class Genome:
                 opened.append(i)
             elif code[i] == ']':
                 if not opened:
-                    return False
+                    return None
                 start = opened.pop()
                 blocks[i] = start
                 blocks[start] = i
         if opened:
-            return False
+            return None
         
         return blocks
     
     def execute(self, program: list) -> bool:
         """Выполняет программу (brainfuck-like язык)"""
-        program = deepcopy(program)
         blocks = Genome.parse_blocks(program)
         tick = 0
         self.current_register = 0
@@ -146,7 +150,7 @@ class Bot:
     def run(self):
         """Выполняет один тик работы бота"""
         if self.alive and self.energy > 0:
-            self.genome.registers[10] = self.energy
+            self.genome.registers[Genome.REG_ENERGY] = self.energy
             self.genome.execute(self.genome.program)
         elif self.energy <= 0:
             self.alive = False
@@ -165,8 +169,8 @@ class Bot:
         """Возвращает взаимодействие, которое хочет выполнить бот"""
         from core.interaction import Interaction
         
-        interaction_type = self.genome.registers[11] if self.alive else -1
-        strength = self.genome.registers[12]
+        interaction_type = self.genome.registers[Genome.REG_INTERACTION_TYPE] if self.alive else -1
+        strength = self.genome.registers[Genome.REG_INTERACTION_STRENGTH]
         direction = self.direction
         
         return Interaction(self, direction, interaction_type, strength)

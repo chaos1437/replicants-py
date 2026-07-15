@@ -40,12 +40,12 @@ class WorldMap:
         self.map = [[Cell(x, y) for x in range(width)] for y in range(height)]
         logger.info(f"WorldMap initialized with width {width} and height {height}")
     
-    def get_cell(self, x: int, y: int):
+    def get_cell(self, x: int, y: int) -> "Cell | None":
         """Получить ячейку по координатам"""
         if 0 <= x < self.width and 0 <= y < self.height:
             return self.map[y][x]
         else:
-            return False
+            return None
     
     def _move(self, first_cell: Cell, another_cell: Cell):
         """Обменять содержимое двух ячеек"""
@@ -86,4 +86,4 @@ class WorldMap:
                     return self.get_cell(x, y)
         
         logger.warning("No free cells found")
-        return False
+        return None

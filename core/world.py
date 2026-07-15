@@ -1,7 +1,7 @@
 """Мир симуляции"""
 import logging
 from core.world_map import WorldMap
-from core.bot import Bot
+from core.bot import Bot, Genome
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,7 @@ class World:
         
         if self.tick % 100 == 0:
             logger.info(f"Tick {self.tick} completed, interactions processed")
-        
-        self.check_consistency()
+            self.check_consistency()
     
     def remove_dead_bots(self):
         """Удалить мертвых ботов"""
@@ -81,7 +80,7 @@ class World:
     def update_vision_for_bot(self, bot: Bot):
         """Обновить регистры vision для бота"""
         # Направления: left, up, right, down -> регистры 5, 6, 7, 8
-        for x, y, register in [(-1, 0, 5), (0, 1, 6), (1, 0, 7), (0, -1, 8)]:
+        for x, y, register in Genome.SENSOR_REGISTERS:
             cell = self.map.get_cell(bot.x + x, bot.y + y)
             
             if cell:
