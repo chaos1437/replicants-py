@@ -100,6 +100,7 @@ class SimulationService:
         self.config = config
         self.running = False
         self.top_bots = []  # Топ ботов по возрасту
+        self._executor = ProcessPoolExecutor(max_workers=multiprocessing.cpu_count())
     
     def tick(self):
         """Один шаг симуляции
@@ -164,19 +165,18 @@ class SimulationService:
         chunk_size = max(1, len(bot_dicts) // (num_workers * 2))  # 2x workers для лучшей загрузки
         chunks = [bot_dicts[i:i+chunk_size] for i in range(0, len(bot_dicts), chunk_size)]
 
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            futures = [executor.submit(_execute_bot_chunk, chunk, 3) for chunk in chunks]
+        futures = [self._executor.submit(_execute_bot_chunk, chunk, 3) for chunk in chunks]
 
-            # Собрать результаты
-            id_to_bot = {bot.id: bot for bot in bots}
-            for future in as_completed(futures):
-                for result in future.result():
-                    bot = id_to_bot.get(result['id'])
-                    if bot:
-                        bot.genome.registers[:] = result['registers']  # in-place update
-                        bot.energy = result['energy']
-                        bot.alive = result['alive']
-                        bot.age += 1
+        # Собрать результаты
+        id_to_bot = {bot.id: bot for bot in bots}
+        for future in as_completed(futures):
+            for result in future.result():
+                bot = id_to_bot.get(result['id'])
+                if bot:
+                    bot.genome.registers[:] = result['registers']  # in-place update
+                    bot.energy = result['energy']
+                    bot.alive = result['alive']
+                    bot.age += 1
 
     def _spawn_bots_if_needed(self):
         """Спавн новых ботов если их слишком мало"""
@@ -228,4 +228,8 @@ class SimulationService:
     def stop(self):
         """Остановка симуляции"""
         self.running = False
+        self._executor.shutdown(wait=False)
         logger.info("Simulation stop requested")
+
+    def __del__(self):
+        self._executor.shutdown(wait=False)
