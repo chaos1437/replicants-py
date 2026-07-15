@@ -155,6 +155,8 @@ class Genome:
 class Bot:
     """Бот с геномом, энергией и позицией"""
     
+    _next_id = 0
+    
     def __init__(self, config=None, parent: Optional['Bot'] = None, energy: int = 255, age: int = 0):
         """
         Args:
@@ -169,7 +171,8 @@ class Bot:
         self.x = None
         self.y = None
         self.age = age
-        self.id = id(self)
+        self.id = Bot._next_id
+        Bot._next_id += 1
     
     def run(self):
         """Выполняет один тик работы бота"""

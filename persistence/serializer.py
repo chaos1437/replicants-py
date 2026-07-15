@@ -102,9 +102,12 @@ class WorldSerializer:
         world.genome_config = genome_config
         
         # Восстановить ботов
+        max_id = -1
         for bot_data in data["bots"]:
             bot = Bot(config=genome_config, energy=bot_data["energy"])
             bot.id = bot_data["id"]
+            if bot.id > max_id:
+                max_id = bot.id
             bot.x = bot_data["x"]
             bot.y = bot_data["y"]
             # Конвертировать строку обратно в список или использовать как есть если уже список
@@ -116,6 +119,10 @@ class WorldSerializer:
             
             world.map.get_cell(bot.x, bot.y).set(bot)
             world.bots.append(bot)
+        
+        # Убедиться, что счётчик id не конфликтует с загруженными
+        if max_id >= Bot._next_id:
+            Bot._next_id = max_id + 1
         
         return world
     
