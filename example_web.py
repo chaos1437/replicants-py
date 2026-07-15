@@ -80,38 +80,49 @@ INDEX_HTML = """<!DOCTYPE html>
   }
   connect();
 
+  // Цветовые палитры
+  function cellColor(energy) {
+    // 0 → тёмно-синий, 128 → тёмно-зелёный, 255 → жёлтый
+    const t = Math.min(255, Math.max(0, energy)) / 255;
+    const r = Math.floor(t * 150);           // 0..150
+    const g = Math.floor(t * 180 + 30);       // 30..210
+    const b = Math.floor((1 - t) * 80 + 20);  // 100..20
+    return `rgb(${r},${g},${b})`;
+  }
+
+  function botColor(energy) {
+    if (energy > 200) return '#fff';
+    if (energy > 150) return '#cfc';
+    if (energy > 100) return '#9f9';
+    if (energy > 50)  return '#693';
+    return '#362';
+  }
+
   function render(data) {
     const w = data.width, h = data.height;
     const cw = canvas.width / w, ch = canvas.height / h;
 
     // Фон
-    ctx.fillStyle = '#111';
+    ctx.fillStyle = '#0a0a12';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Ячейки — энергия фона (синий канал)
+    // Ячейки
     if (data.cells) {
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
           const e = data.cells[y][x];
-          const v = Math.min(255, Math.max(0, e));
-          ctx.fillStyle = `rgb(0, ${Math.floor(v * 0.4)}, ${Math.floor(v * 0.8 + 40)})`;
+          ctx.fillStyle = cellColor(e);
           ctx.fillRect(x * cw, (h - 1 - y) * ch, cw, ch);
         }
       }
     }
 
-    // Боты — цвет по энергии
+    // Боты — яркие точки поверх ячеек
     if (data.bots) {
       for (const b of data.bots) {
         if (!b.alive) continue;
         const bx = b.x * cw, by = (h - 1 - b.y) * ch;
-        const e = b.energy;
-        let color;
-        if (e > 200) color = '#0f0';
-        else if (e > 100) color = '#ff0';
-        else if (e > 50) color = '#f80';
-        else color = '#f00';
-        ctx.fillStyle = color;
+        ctx.fillStyle = botColor(b.energy);
         ctx.fillRect(bx + 1, by + 1, cw - 2, ch - 2);
       }
     }
@@ -252,7 +263,6 @@ async def ws_handler(request):
 async def main():
     config, args = load_config()
 
-    # Логирование
     logging.basicConfig(
         level=config.log_level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -302,21 +312,26 @@ async def main():
     print(f"  Пробел — пауза/продолжение авто-режима")
     print(f"  Ctrl+C для выхода\n")
 
+    # Бесконечное ожидание. Ctrl+C выходит из sleep через KeyboardInterrupt.
+    # asyncio.sleep(3600) гарантированно прерывается сигналом, в отличие
+    # от asyncio.Event().wait() на некоторых платформах.
     try:
-        await asyncio.Event().wait()  # бесконечное ожидание
-    except KeyboardInterrupt:
-        pass
-    finally:
+        while True:
+            await asyncio.sleep(3600)
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("Shutting down...")
+    finally:
+        # Отменить дочерние задачи (WS auto_loop и т.д.)
+        self_task = asyncio.current_task()
+        for task in asyncio.all_tasks():
+            if task is not self_task:
+                task.cancel()
         service.stop()
         await runner.cleanup()
-
-    if not config.save_file.exists():
         from persistence.serializer import WorldSerializer
         logger.info(f"Saving world to {config.save_file}")
         WorldSerializer.save(world, config.save_file)
-
-    logger.info("Server stopped")
+        logger.info("Server stopped")
 
 
 if __name__ == "__main__":
