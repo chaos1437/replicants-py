@@ -3,13 +3,9 @@ import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
-from core.bot import Bot
+from core.bot import Bot, Genome
 
 logger = logging.getLogger(__name__)
-
-
-# Opcode constants (same as in core/bot.py)
-OP_INC, OP_DEC, OP_NEXT, OP_PREV, OP_JZ, OP_JNZ = range(6)
 
 
 def _execute_bot_chunk(bots_data: list[dict], phase: int) -> list[dict]:
@@ -21,7 +17,6 @@ def _execute_bot_chunk(bots_data: list[dict], phase: int) -> list[dict]:
     Каждый dict: {id, opcodes, jumps, registers, energy, max_ticks}
     Возвращает: {id, registers, energy, alive}
     """
-    UNCHANGABLE = frozenset({5, 6, 7, 8, 10})
     REG_ENERGY = 10
 
     results = []
@@ -38,41 +33,9 @@ def _execute_bot_chunk(bots_data: list[dict], phase: int) -> list[dict]:
 
         elif phase == 3:
             registers[REG_ENERGY] = energy
-            alive = True
-            n = len(opcodes)
-
-            if n > 0:
-                cur = 0
-                tick = 0
-                i = 0
-                while i < n:
-                    op = opcodes[i]
-                    if op == OP_INC:
-                        if cur not in UNCHANGABLE:
-                            v = registers[cur] + 1
-                            registers[cur] = 0 if v > 255 else v
-                    elif op == OP_DEC:
-                        if cur not in UNCHANGABLE:
-                            v = registers[cur] - 1
-                            registers[cur] = 255 if v < 0 else v
-                    elif op == OP_NEXT:
-                        cur = 0 if cur == 23 else cur + 1
-                    elif op == OP_PREV:
-                        cur = 23 if cur == 0 else cur - 1
-                    elif op == OP_JZ:
-                        if not registers[cur]:
-                            i = jumps[i]
-                    elif op == OP_JNZ:
-                        if registers[cur]:
-                            i = jumps[i]
-                    i += 1
-                    tick += 1
-                    if tick > max_ticks:
-                        break
-
+            Genome.execute(opcodes, jumps, registers, max_ticks)
             energy = registers[REG_ENERGY]
-            if energy <= 0:
-                alive = False
+            alive = energy > 0
 
         results.append({'id': rid, 'registers': registers, 'energy': energy, 'alive': alive})
 

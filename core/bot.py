@@ -20,6 +20,7 @@ class Genome:
     REG_SEND_DATA = 13
     REG_RECV_DATA = 9
     commands = ["+", "-", ">", "<", "[", "]"]
+    OP_INC, OP_DEC, OP_NEXT, OP_PREV, OP_JZ, OP_JNZ = range(6)
     
     def __init__(self, config, parent_genome=None):
         """
@@ -100,16 +101,23 @@ class Genome:
         
         return blocks
     
-    def execute(self) -> bool:
-        """Выполняет скомпилированную программу. Использует self.opcodes, self.jumps."""
-        opcodes = self.opcodes
-        jumps = self.jumps
-        if not opcodes:
-            return True  # пустая/невалидная программа — ничего не делаем
+    @staticmethod
+    def execute(opcodes, jumps, registers, max_ticks) -> bool:
+        """Выполняет скомпилированную программу (статическая, без self).
         
-        regs = self.registers
-        unch = self.unchangable_registers  # frozenset
-        max_t = self.max_ticks
+        Args:
+            opcodes: tuple[int] — скомпилированные opcodes
+            jumps: tuple[int] — прыжки для []
+            registers: bytearray[24] — регистры (мутируются in-place)
+            max_ticks: int — макс. количество инструкций
+        
+        Returns:
+            True если выполнение завершилось нормально, False если превышен max_ticks
+        """
+        if not opcodes:
+            return True
+        
+        unch = Genome.unchangable_registers
         n = len(opcodes)
         cur = 0
         tick = 0
@@ -117,28 +125,28 @@ class Genome:
         
         while i < n:
             op = opcodes[i]
-            if op == OP_INC:
+            if op == Genome.OP_INC:
                 if cur not in unch:
-                    v = regs[cur] + 1
-                    regs[cur] = 0 if v > 255 else v
-            elif op == OP_DEC:
+                    v = registers[cur] + 1
+                    registers[cur] = 0 if v > 255 else v
+            elif op == Genome.OP_DEC:
                 if cur not in unch:
-                    v = regs[cur] - 1
-                    regs[cur] = 255 if v < 0 else v
-            elif op == OP_NEXT:
+                    v = registers[cur] - 1
+                    registers[cur] = 255 if v < 0 else v
+            elif op == Genome.OP_NEXT:
                 cur = 0 if cur == 23 else cur + 1
-            elif op == OP_PREV:
+            elif op == Genome.OP_PREV:
                 cur = 23 if cur == 0 else cur - 1
-            elif op == OP_JZ:
-                if not regs[cur]:
+            elif op == Genome.OP_JZ:
+                if not registers[cur]:
                     i = jumps[i]
-            elif op == OP_JNZ:
-                if regs[cur]:
+            elif op == Genome.OP_JNZ:
+                if registers[cur]:
                     i = jumps[i]
             
             i += 1
             tick += 1
-            if tick > max_t:
+            if tick > max_ticks:
                 return False
         
         return True
@@ -166,8 +174,9 @@ class Bot:
     def run(self):
         """Выполняет один тик работы бота"""
         if self.alive and self.energy > 0:
-            self.genome.registers[Genome.REG_ENERGY] = self.energy
-            self.genome.execute()  # больше не передаём program
+            g = self.genome
+            g.registers[Genome.REG_ENERGY] = self.energy
+            Genome.execute(g.opcodes, g.jumps, g.registers, g.max_ticks)
         elif self.energy <= 0:
             self.alive = False
         

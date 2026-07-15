@@ -84,7 +84,7 @@ class TestExecute:
     def test_execute_simple(self, genome):
         """+++ → registers[0] == 3"""
         self._set_program(genome, ["+", "+", "+"])
-        result = genome.execute()
+        result = Genome.execute(genome.opcodes, genome.jumps, genome.registers, genome.max_ticks)
         assert result is True
         assert genome.registers[0] == 3
 
@@ -92,7 +92,7 @@ class TestExecute:
         """[>+<-] с registers[0]=3 → обнуляет reg[0], переносит значение в reg[1]"""
         genome.registers[0] = 3
         self._set_program(genome, ["[", ">", "+", "<", "-", "]"])
-        result = genome.execute()
+        result = Genome.execute(genome.opcodes, genome.jumps, genome.registers, genome.max_ticks)
         assert result is True
         assert genome.registers[0] == 0
         assert genome.registers[1] == 3
@@ -102,27 +102,27 @@ class TestExecute:
         genome = Genome(genome_config)  # max_ticks = 512
         genome.registers[0] = 1
         self._set_program(genome, ["[", "]"])
-        result = genome.execute()
+        result = Genome.execute(genome.opcodes, genome.jumps, genome.registers, genome.max_ticks)
         assert result is False
 
     def test_execute_unchangable_registers(self, genome):
         """Попытка изменить unchangable регистр 5 → значение не меняется"""
         self._set_program(genome, [">", ">", ">", ">", ">", "+"])
-        result = genome.execute()
+        result = Genome.execute(genome.opcodes, genome.jumps, genome.registers, genome.max_ticks)
         assert result is True
         assert genome.registers[5] == 0  # unchangable, не изменился
 
     def test_execute_wrap_around(self, genome):
         """< на регистре 0 → 23, затем > → 0, затем +++ (проверка wrap)"""
         self._set_program(genome, ["<", ">", "+", "+", "+"])
-        result = genome.execute()
+        result = Genome.execute(genome.opcodes, genome.jumps, genome.registers, genome.max_ticks)
         assert result is True
         assert genome.registers[0] == 3
 
     def test_execute_register_overflow(self, genome):
         """256 раз + → переполнение: registers[0] == 0 (255→0)"""
         self._set_program(genome, ["+"] * 256)
-        result = genome.execute()
+        result = Genome.execute(genome.opcodes, genome.jumps, genome.registers, genome.max_ticks)
         assert result is True
         assert genome.registers[0] == 0
 
