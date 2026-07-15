@@ -71,7 +71,7 @@ class StateProvider:
             'alive': bot.alive,
             'genome': {
                 'program': bot.genome.program,
-                'registers': bot.genome.registers,
+                'registers': list(bot.genome.registers),
                 'mutation_rate': bot.genome.mutation_rate,
                 'program_length': bot.genome.program_length
             }

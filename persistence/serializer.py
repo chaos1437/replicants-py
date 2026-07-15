@@ -55,7 +55,7 @@ class WorldSerializer:
                     "age": bot.age,
                     "genome": {
                         "program": "".join(bot.genome.program),  # В одну строку
-                        "registers": bot.genome.registers
+                        "registers": list(bot.genome.registers)
                     }
                 })
         
@@ -110,7 +110,7 @@ class WorldSerializer:
             # Конвертировать строку обратно в список или использовать как есть если уже список
             program = bot_data["genome"]["program"]
             bot.genome.program = list(program) if isinstance(program, str) else program
-            bot.genome.registers = bot_data["genome"]["registers"]
+            bot.genome.registers = bytearray(bot_data["genome"]["registers"])
             bot.age = bot_data["age"]
             bot.alive = True
             

@@ -32,7 +32,7 @@ class Genome:
         self.program_length = config.program_length
         self.max_ticks = config.max_ticks
         
-        self.registers = [0 for _ in range(24)]
+        self.registers = bytearray(24)
         self.program = self.mutate_program(parent_genome)
         compiled = self.compile_program(self.program)
         if compiled is not None:
