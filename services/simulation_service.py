@@ -280,12 +280,15 @@ class SimulationService:
         try:
             self._shm_regs.close()
             self._shm_regs.unlink()
-        except Exception:
-            pass
+        except (BufferError, FileNotFoundError):
+            pass  # Уже закрыт или не существует
 
     def __del__(self):
         try:
             self._executor.shutdown(wait=False)
         except Exception:
             pass
-        self._cleanup_shm()
+        try:
+            self._shm_regs.close()
+        except Exception:
+            pass
