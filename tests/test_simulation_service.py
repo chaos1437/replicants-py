@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from core.bot import Bot
+from core.bot import Bot, Genome
 from core.world import World
 from core.world_map import WorldMap
 from config.settings import GenomeConfig, WorldConfig, SimulationConfig
@@ -127,7 +127,11 @@ class TestRunBotsParallel:
             bot = Bot(config=sim_service.world.genome_config)
             bot.alive = True
             bot.energy = 100
+            # Установить программу и перекомпилировать
             bot.genome.program = ["+", "+", "+"]
+            compiled = Genome.compile_program(bot.genome.program)
+            assert compiled is not None
+            bot.genome.opcodes, bot.genome.jumps = compiled
             bot.genome.registers = [0] * 24
             bot.age = 0
             bots.append(bot)
@@ -145,10 +149,12 @@ class TestExecuteBotChunk:
 
     def test_execute_bot_chunk_phase3(self):
         """Один бот, программа +++, registers[0] == 3 после выполнения, alive=True"""
+        opcodes, jumps = Genome.compile_program(["+", "+", "+"])
         bot_data = [
             {
                 "id": 1,
-                "program": ["+", "+", "+"],
+                "opcodes": opcodes,
+                "jumps": jumps,
                 "registers": [0] * 24,
                 "energy": 255,
                 "max_ticks": 512,
@@ -163,10 +169,12 @@ class TestExecuteBotChunk:
 
     def test_execute_bot_chunk_phase3_dead(self):
         """energy=0 → alive=False после выполнения"""
+        opcodes, jumps = Genome.compile_program(["+", "+", "+"])
         bot_data = [
             {
                 "id": 2,
-                "program": ["+", "+", "+"],
+                "opcodes": opcodes,
+                "jumps": jumps,
                 "registers": [0] * 24,
                 "energy": 0,
                 "max_ticks": 512,

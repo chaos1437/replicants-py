@@ -82,17 +82,20 @@ def benchmark_genome_execute():
     for name, program in programs.items():
         genome = Genome(config)
         genome.program = program
+        compiled = Genome.compile_program(genome.program)
+        if compiled:
+            genome.opcodes, genome.jumps = compiled
         
         # Прогрев
         for _ in range(100):
-            genome.execute(genome.program)
+            genome.execute()
         
         # Замер
         trials = 1000
         start = time.perf_counter()
         for _ in range(trials):
             genome.registers = [0] * 24
-            genome.execute(genome.program)
+            genome.execute()
         elapsed = time.perf_counter() - start
         
         results[name] = {

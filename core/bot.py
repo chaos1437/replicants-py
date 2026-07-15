@@ -6,11 +6,13 @@ from typing import Optional
 random = random.SystemRandom()
 logger = logging.getLogger(__name__)
 
+OP_INC, OP_DEC, OP_NEXT, OP_PREV, OP_JZ, OP_JNZ = range(6)
+
 
 class Genome:
     """Геном бота - программа и регистры"""
     
-    unchangable_registers = [5, 6, 7, 8, 10]
+    unchangable_registers = frozenset({5, 6, 7, 8, 10})
     SENSOR_REGISTERS = [(-1, 0, 5), (0, 1, 6), (1, 0, 7), (0, -1, 8)]
     REG_ENERGY = 10
     REG_INTERACTION_TYPE = 11
@@ -32,6 +34,11 @@ class Genome:
         
         self.registers = [0 for _ in range(24)]
         self.program = self.mutate_program(parent_genome)
+        compiled = self.compile_program(self.program)
+        if compiled is not None:
+            self.opcodes, self.jumps = compiled
+        else:
+            self.opcodes, self.jumps = (), ()  # Invalid program
         self.current_register = 0
     
     def mutate_program(self, parent_genome: Optional['Genome']) -> list:
@@ -45,15 +52,34 @@ class Genome:
                     program[i] = random.choice(self.commands)
         return program
     
+    @staticmethod
+    def compile_program(program: list) -> tuple[tuple[int, ...], tuple[int, ...]] | None:
+        """Скомпилировать программу в (opcodes, jumps). opcodes: int 0-5, jumps: target index or -1"""
+        CHAR_TO_OP = {'+': OP_INC, '-': OP_DEC, '>': OP_NEXT, '<': OP_PREV, '[': OP_JZ, ']': OP_JNZ}
+        n = len(program)
+        opcodes = [0] * n
+        jumps = [-1] * n
+        stack = []
+        for i, sym in enumerate(program):
+            op = CHAR_TO_OP.get(sym)
+            if op is None:
+                return None
+            opcodes[i] = op
+            if sym == '[':
+                stack.append(i)
+            elif sym == ']':
+                if not stack:
+                    return None
+                start = stack.pop()
+                jumps[start] = i
+                jumps[i] = start
+        if stack:
+            return None
+        return (tuple(opcodes), tuple(jumps))
+    
     def check_program(self, program: list) -> bool:
         """Проверяет корректность программы (баланс скобок)"""
-        if program.count("[") != program.count("]"):
-            return False
-        
-        if self.parse_blocks(program) is None:
-            return False
-        
-        return True
+        return self.compile_program(program) is not None
     
     @staticmethod
     def parse_blocks(code: list) -> dict | None:
@@ -74,55 +100,45 @@ class Genome:
         
         return blocks
     
-    def execute(self, program: list) -> bool:
-        """Выполняет программу (brainfuck-like язык)"""
-        blocks = Genome.parse_blocks(program)
-        tick = 0
-        self.current_register = 0
+    def execute(self) -> bool:
+        """Выполняет скомпилированную программу. Использует self.opcodes, self.jumps."""
+        opcodes = self.opcodes
+        jumps = self.jumps
+        if not opcodes:
+            return True  # пустая/невалидная программа — ничего не делаем
         
+        regs = self.registers
+        unch = self.unchangable_registers  # frozenset
+        max_t = self.max_ticks
+        n = len(opcodes)
+        cur = 0
+        tick = 0
         i = 0
-        while i < len(program):
-            sym = program[i]
-            
-            match sym:
-                case '>':
-                    if self.current_register == len(self.registers) - 1:
-                        self.current_register = 0
-                    else:
-                        self.current_register += 1
-                
-                case '<':
-                    if self.current_register == 0:
-                        self.current_register = len(self.registers) - 1
-                    else:
-                        self.current_register -= 1
-                
-                case '+':
-                    if self.current_register not in self.unchangable_registers:
-                        if self.registers[self.current_register] == 255:
-                            self.registers[self.current_register] = 0
-                        else:
-                            self.registers[self.current_register] += 1
-                
-                case '-':
-                    if self.current_register not in self.unchangable_registers:
-                        if self.registers[self.current_register] == 0:
-                            self.registers[self.current_register] = 255
-                        else:
-                            self.registers[self.current_register] -= 1
-                
-                case '[':
-                    if not self.registers[self.current_register]:
-                        i = blocks[i]
-                
-                case ']':
-                    if self.registers[self.current_register]:
-                        i = blocks[i]
+        
+        while i < n:
+            op = opcodes[i]
+            if op == OP_INC:
+                if cur not in unch:
+                    v = regs[cur] + 1
+                    regs[cur] = 0 if v > 255 else v
+            elif op == OP_DEC:
+                if cur not in unch:
+                    v = regs[cur] - 1
+                    regs[cur] = 255 if v < 0 else v
+            elif op == OP_NEXT:
+                cur = 0 if cur == 23 else cur + 1
+            elif op == OP_PREV:
+                cur = 23 if cur == 0 else cur - 1
+            elif op == OP_JZ:
+                if not regs[cur]:
+                    i = jumps[i]
+            elif op == OP_JNZ:
+                if regs[cur]:
+                    i = jumps[i]
             
             i += 1
             tick += 1
-            
-            if tick > self.max_ticks:
+            if tick > max_t:
                 return False
         
         return True
@@ -151,7 +167,7 @@ class Bot:
         """Выполняет один тик работы бота"""
         if self.alive and self.energy > 0:
             self.genome.registers[Genome.REG_ENERGY] = self.energy
-            self.genome.execute(self.genome.program)
+            self.genome.execute()  # больше не передаём program
         elif self.energy <= 0:
             self.alive = False
         

@@ -8,77 +8,63 @@ from core.bot import Bot
 logger = logging.getLogger(__name__)
 
 
+# Opcode constants (same as in core/bot.py)
+OP_INC, OP_DEC, OP_NEXT, OP_PREV, OP_JZ, OP_JNZ = range(6)
+
+
 def _execute_bot_chunk(bots_data: list[dict], phase: int) -> list[dict]:
     """Выполнить чанк ботов в воркере.
 
-    phase=2: обновление vision (регистры 5-8)
+    phase=2: обновление vision (зарезервировано)
     phase=3: выполнение программы
 
-    Каждый dict: {id, program, registers, energy, max_ticks}
-    Возвращает: {id, registers, energy}
+    Каждый dict: {id, opcodes, jumps, registers, energy, max_ticks}
+    Возвращает: {id, registers, energy, alive}
     """
-    UNCHANGABLE = {5, 6, 7, 8, 10}
+    UNCHANGABLE = frozenset({5, 6, 7, 8, 10})
     REG_ENERGY = 10
 
     results = []
     for bot in bots_data:
         rid = bot['id']
-        program = bot['program']
-        registers = bot['registers']  # уже копия
+        opcodes = bot['opcodes']
+        jumps = bot['jumps']
+        registers = bot['registers']
         energy = bot['energy']
         max_ticks = bot['max_ticks']
 
         if phase == 2:
-            # Vision — обновление сенсорных регистров
-            # В воркере нет доступа к карте, поэтому vision
-            # остаётся sequential (на основной синхронизации).
-            # Этот phase пока не используется.
-            pass
+            pass  # vision — sequential only
 
         elif phase == 3:
-            # Bot run: записать энергию в регистр и выполнить программу
             registers[REG_ENERGY] = energy
             alive = True
+            n = len(opcodes)
 
-            # Парсинг блоков (упрощённая версия Genome.parse_blocks)
-            opened = []
-            blocks = {}
-            valid = True
-            for i, sym in enumerate(program):
-                if sym == '[':
-                    opened.append(i)
-                elif sym == ']':
-                    if not opened:
-                        valid = False
-                        break
-                    start = opened.pop()
-                    blocks[i] = start
-                    blocks[start] = i
-            if opened:
-                valid = False
-
-            if valid:
-                cur_reg = 0
+            if n > 0:
+                cur = 0
                 tick = 0
                 i = 0
-                while i < len(program) and valid:
-                    sym = program[i]
-                    if sym == '>':
-                        cur_reg = 0 if cur_reg == 23 else cur_reg + 1
-                    elif sym == '<':
-                        cur_reg = 23 if cur_reg == 0 else cur_reg - 1
-                    elif sym == '+':
-                        if cur_reg not in UNCHANGABLE:
-                            registers[cur_reg] = 0 if registers[cur_reg] == 255 else registers[cur_reg] + 1
-                    elif sym == '-':
-                        if cur_reg not in UNCHANGABLE:
-                            registers[cur_reg] = 255 if registers[cur_reg] == 0 else registers[cur_reg] - 1
-                    elif sym == '[':
-                        if not registers[cur_reg]:
-                            i = blocks[i]
-                    elif sym == ']':
-                        if registers[cur_reg]:
-                            i = blocks[i]
+                while i < n:
+                    op = opcodes[i]
+                    if op == OP_INC:
+                        if cur not in UNCHANGABLE:
+                            v = registers[cur] + 1
+                            registers[cur] = 0 if v > 255 else v
+                    elif op == OP_DEC:
+                        if cur not in UNCHANGABLE:
+                            v = registers[cur] - 1
+                            registers[cur] = 255 if v < 0 else v
+                    elif op == OP_NEXT:
+                        cur = 0 if cur == 23 else cur + 1
+                    elif op == OP_PREV:
+                        cur = 23 if cur == 0 else cur - 1
+                    elif op == OP_JZ:
+                        if not registers[cur]:
+                            i = jumps[i]
+                    elif op == OP_JNZ:
+                        if registers[cur]:
+                            i = jumps[i]
                     i += 1
                     tick += 1
                     if tick > max_ticks:
@@ -168,8 +154,9 @@ class SimulationService:
         # Сериализация состояния ботов для воркеров
         bot_dicts = [{
             'id': bot.id,
-            'program': bot.genome.program,  # shared (read-only, строки иммутабельны)
-            'registers': bot.genome.registers[:],  # копия
+            'opcodes': bot.genome.opcodes,
+            'jumps': bot.genome.jumps,
+            'registers': bot.genome.registers[:],
             'energy': bot.energy,
             'max_ticks': bot.genome.max_ticks,
         } for bot in bots]

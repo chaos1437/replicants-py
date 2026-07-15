@@ -73,17 +73,26 @@ class TestCheckProgram:
 class TestExecute:
     """Genome.execute — выполнение brainfuck-подобной программы"""
 
+    @staticmethod
+    def _set_program(genome, program):
+        """Установить программу и перекомпилировать"""
+        genome.program = program
+        compiled = Genome.compile_program(program)
+        assert compiled is not None, f"Invalid test program: {program}"
+        genome.opcodes, genome.jumps = compiled
+
     def test_execute_simple(self, genome):
         """+++ → registers[0] == 3"""
-        result = genome.execute(["+", "+", "+"])
+        self._set_program(genome, ["+", "+", "+"])
+        result = genome.execute()
         assert result is True
         assert genome.registers[0] == 3
 
     def test_execute_loop(self, genome):
         """[>+<-] с registers[0]=3 → обнуляет reg[0], переносит значение в reg[1]"""
         genome.registers[0] = 3
-        program = ["[", ">", "+", "<", "-", "]"]
-        result = genome.execute(program)
+        self._set_program(genome, ["[", ">", "+", "<", "-", "]"])
+        result = genome.execute()
         assert result is True
         assert genome.registers[0] == 0
         assert genome.registers[1] == 3
@@ -92,27 +101,28 @@ class TestExecute:
         """Бесконечный цикл [] при registers[0]=1 → False (превышение max_ticks)"""
         genome = Genome(genome_config)  # max_ticks = 512
         genome.registers[0] = 1
-        result = genome.execute(["[", "]"])
+        self._set_program(genome, ["[", "]"])
+        result = genome.execute()
         assert result is False
 
     def test_execute_unchangable_registers(self, genome):
         """Попытка изменить unchangable регистр 5 → значение не меняется"""
-        # 5 раз > (переход на регистр 5), затем +
-        result = genome.execute([">", ">", ">", ">", ">", "+"])
+        self._set_program(genome, [">", ">", ">", ">", ">", "+"])
+        result = genome.execute()
         assert result is True
         assert genome.registers[5] == 0  # unchangable, не изменился
 
     def test_execute_wrap_around(self, genome):
         """< на регистре 0 → 23, затем > → 0, затем +++ (проверка wrap)"""
-        # < (0→23), > (23→0), +, +, +
-        result = genome.execute(["<", ">", "+", "+", "+"])
+        self._set_program(genome, ["<", ">", "+", "+", "+"])
+        result = genome.execute()
         assert result is True
         assert genome.registers[0] == 3
 
     def test_execute_register_overflow(self, genome):
         """256 раз + → переполнение: registers[0] == 0 (255→0)"""
-        program = ["+"] * 256
-        result = genome.execute(program)
+        self._set_program(genome, ["+"] * 256)
+        result = genome.execute()
         assert result is True
         assert genome.registers[0] == 0
 
@@ -204,6 +214,9 @@ class TestRun:
         bot = Bot(config=genome_config, energy=100, age=5)
         # Контролируем программу и состояние
         bot.genome.program = ["+"]  # валидная программа
+        c = Genome.compile_program(bot.genome.program)
+        assert c is not None
+        bot.genome.opcodes, bot.genome.jumps = c
         bot.alive = True
         initial_age = bot.age
 
