@@ -112,18 +112,44 @@ INDEX_HTML = """<!DOCTYPE html>
         for (let x = 0; x < w; x++) {
           const e = data.cells[y][x];
           ctx.fillStyle = cellColor(e);
-          ctx.fillRect(x * cw, (h - 1 - y) * ch, cw, ch);
+          ctx.fillRect(x * cw, (h - 1 - y) * ch, cw + 1, ch + 1);  // +1 чтобы не было щелей
         }
       }
     }
 
-    // Боты — яркие точки поверх ячеек
+    // Сетка между клетками (1px чёрные линии)
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 1; x < w; x++) {
+      const px = x * cw;
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, canvas.height);
+    }
+    for (let y = 1; y < h; y++) {
+      const py = y * ch;
+      ctx.moveTo(0, py);
+      ctx.lineTo(canvas.width, py);
+    }
+    ctx.stroke();
+
+    // Боты — яркие точки с чёрной сердцевиной
     if (data.bots) {
       for (const b of data.bots) {
         if (!b.alive) continue;
         const bx = b.x * cw, by = (h - 1 - b.y) * ch;
+
+        // Подложка (цвет энергии)
         ctx.fillStyle = botColor(b.energy);
         ctx.fillRect(bx + 1, by + 1, cw - 2, ch - 2);
+
+        // Чёрная точка в центре
+        const cx = bx + cw / 2, cy = by + ch / 2;
+        const dotR = Math.max(1, Math.min(cw, ch) * 0.2);
+        ctx.fillStyle = '#000';
+        ctx.beginPath();
+        ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
 
