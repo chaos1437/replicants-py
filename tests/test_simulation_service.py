@@ -7,7 +7,7 @@ from core.bot import Bot, Genome
 from core.world import World
 from core.world_map import WorldMap
 from config.settings import GenomeConfig, WorldConfig, SimulationConfig
-from services.simulation_service import SimulationService, _execute_bot_chunk
+from services.simulation_service import SimulationService, _execute_chunk
 
 
 @pytest.fixture
@@ -135,7 +135,11 @@ class TestRunBotsParallel:
             bot.genome.registers = [0] * 24
             bot.age = 0
             bots.append(bot)
-        sim_service.world.bots = bots
+        # Нужен спавн на карте для vision (или хотя бы x,y)
+        for i, bot in enumerate(bots):
+            bot.x = i
+            bot.y = 0
+            sim_service.world.bots = bots
 
         sim_service._run_bots_parallel()
 
@@ -144,10 +148,10 @@ class TestRunBotsParallel:
             assert bot.genome.registers[0] == 3
 
 
-class TestExecuteBotChunk:
-    """Tests for module-level _execute_bot_chunk function"""
+class TestExecuteChunk:
+    """Tests for module-level _execute_chunk function"""
 
-    def test_execute_bot_chunk_phase3(self):
+    def test_execute_chunk_simple(self):
         """Один бот, программа +++, registers[0] == 3 после выполнения, alive=True"""
         opcodes, jumps = Genome.compile_program(["+", "+", "+"])
         bot_data = [
@@ -155,33 +159,91 @@ class TestExecuteBotChunk:
                 "id": 1,
                 "opcodes": opcodes,
                 "jumps": jumps,
-                "registers": [0] * 24,
+                "registers": bytearray(24),
                 "energy": 255,
                 "max_ticks": 512,
+                "x": 5,
+                "y": 5,
             }
         ]
+        map_flat = bytes(10 * 10)  # 10x10, все пустые
 
-        results = _execute_bot_chunk(bot_data, 3)
+        results = _execute_chunk(bot_data, map_flat, 10, 10)
 
         assert len(results) == 1
         assert results[0]["registers"][0] == 3
         assert results[0]["alive"] is True
 
-    def test_execute_bot_chunk_phase3_dead(self):
-        """energy=0 → alive=False после выполнения"""
+    def test_execute_chunk_dead(self):
+        """energy=0 → alive=False"""
         opcodes, jumps = Genome.compile_program(["+", "+", "+"])
         bot_data = [
             {
                 "id": 2,
                 "opcodes": opcodes,
                 "jumps": jumps,
-                "registers": [0] * 24,
+                "registers": bytearray(24),
                 "energy": 0,
                 "max_ticks": 512,
+                "x": 0,
+                "y": 0,
             }
         ]
+        map_flat = bytes(10 * 10)
 
-        results = _execute_bot_chunk(bot_data, 3)
+        results = _execute_chunk(bot_data, map_flat, 10, 10)
 
         assert len(results) == 1
         assert results[0]["alive"] is False
+
+    def test_execute_chunk_vision(self):
+        """Vision: соседняя клетка с ботом → register[5]=1"""
+        opcodes, jumps = Genome.compile_program([])
+        bot_data = [
+            {
+                "id": 3,
+                "opcodes": opcodes,
+                "jumps": jumps,
+                "registers": bytearray(24),
+                "energy": 255,
+                "max_ticks": 512,
+                "x": 5,
+                "y": 5,
+            }
+        ]
+        # Клетка слева (4,5) занята
+        map_flat = bytearray(10 * 10)
+        map_flat[5 * 10 + 4] = 1
+
+        results = _execute_chunk(bot_data, bytes(map_flat), 10, 10)
+
+        # SENSOR_REGISTERS[0] = (-1, 0, 5) — левая клетка → репликант
+        assert results[0]["registers"][5] == 1
+
+    def test_execute_chunk_interaction(self):
+        """Interaction: registers[11]=1, strength=50 → interaction в результате"""
+        opcodes, jumps = Genome.compile_program([])
+        regs = bytearray(24)
+        regs[11] = 1   # REG_INTERACTION_TYPE
+        regs[12] = 50  # REG_INTERACTION_STRENGTH
+        regs[0] = 5    # direction (max из 0..4)
+        bot_data = [
+            {
+                "id": 4,
+                "opcodes": opcodes,
+                "jumps": jumps,
+                "registers": regs,
+                "energy": 255,
+                "max_ticks": 512,
+                "x": 0,
+                "y": 0,
+            }
+        ]
+        map_flat = bytes(10 * 10)
+
+        results = _execute_chunk(bot_data, map_flat, 10, 10)
+
+        assert results[0]["interaction"] is not None
+        assert results[0]["interaction"]["type"] == 1
+        assert results[0]["interaction"]["strength"] == 50
+        assert results[0]["interaction"]["direction"] == 0

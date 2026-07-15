@@ -4,40 +4,71 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
 from core.bot import Bot, Genome
+from core.interaction import Interaction
 
 logger = logging.getLogger(__name__)
 
 
-def _execute_bot_chunk(bots_data: list[dict], phase: int) -> list[dict]:
-    """Выполнить чанк ботов в воркере.
+def _execute_chunk(bots_data: list[dict],
+                   map_flat: bytes,
+                   map_width: int,
+                   map_height: int) -> list[dict]:
+    """Один parallel проход: vision + execute + сбор взаимодействия.
 
-    phase=2: обновление vision (зарезервировано)
-    phase=3: выполнение программы
+    bots_data: list of dicts with id, opcodes, jumps, registers, energy, max_ticks, x, y
+    map_flat: bytes length=width*height, 0=empty, 1=occupied
+    map_width, map_height: размеры карты
 
-    Каждый dict: {id, opcodes, jumps, registers, energy, max_ticks}
-    Возвращает: {id, registers, energy, alive}
+    Returns: list of dicts с id, registers, energy, alive, interaction|None
     """
     REG_ENERGY = 10
-
     results = []
+
     for bot in bots_data:
         rid = bot['id']
-        opcodes = bot['opcodes']
-        jumps = bot['jumps']
-        registers = bot['registers']
-        energy = bot['energy']
-        max_ticks = bot['max_ticks']
+        regs = bot['registers']
+        x, y = bot['x'], bot['y']
 
-        if phase == 2:
-            pass  # vision — sequential only
+        # ═══ VISION ═══
+        for dx, dy, reg in Genome.SENSOR_REGISTERS:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < map_width and 0 <= ny < map_height:
+                state = map_flat[ny * map_width + nx]
+            else:
+                state = 2  # world_border
+            regs[reg] = state
 
-        elif phase == 3:
-            registers[REG_ENERGY] = energy
-            Genome.execute(opcodes, jumps, registers, max_ticks)
-            energy = registers[REG_ENERGY]
-            alive = energy > 0
+        # ═══ EXECUTE ═══
+        regs[REG_ENERGY] = bot['energy']
+        Genome.execute(bot['opcodes'], bot['jumps'], regs, bot['max_ticks'])
+        energy = regs[REG_ENERGY]
+        alive = energy > 0
 
-        results.append({'id': rid, 'registers': registers, 'energy': energy, 'alive': alive})
+        # ═══ INTERACTION ═══
+        interaction = None
+        if alive:
+            # direction из registers[0:4]
+            max_val = 0
+            max_idx = -1
+            for i in range(5):
+                if regs[i] > max_val:
+                    max_val = regs[i]
+                    max_idx = i
+            direction = max_idx if max_val > 0 else -1
+
+            interaction = {
+                'type': regs[Genome.REG_INTERACTION_TYPE],
+                'strength': regs[Genome.REG_INTERACTION_STRENGTH],
+                'direction': direction,
+            }
+
+        results.append({
+            'id': rid,
+            'registers': regs,
+            'energy': energy,
+            'alive': alive,
+            'interaction': interaction,
+        })
 
     return results
 
@@ -68,54 +99,47 @@ class SimulationService:
     def tick(self):
         """Один шаг симуляции
         
-        Разделено на фазы для будущего мультипроцессинга:
         1. Спавн новых ботов
-        2. Обновление vision (READ-ONLY, параллелится)
-        3. Выполнение ботов (параллелится!)
-        4. Сбор взаимодействий (параллелится)
-        5. Применение взаимодействий (последовательно)
+        2. Vision + execute + сбор взаимодействий (параллельно!)
+        3. Применение взаимодействий (последовательно)
         """
-        # ФАЗА 1: Спавн новых ботов
         self._spawn_bots_if_needed()
-        
-        # ФАЗА 2: Обновление vision (можно параллелить)
-        for bot in self.world.bots:
-            self.world.update_vision_for_bot(bot)
-        
-        # ФАЗА 3: Выполнение ботов (многоядерно!)
         self._run_bots_parallel()
-        
-        # ФАЗА 4: Сбор взаимодействий (можно параллелить)
-        for bot in self.world.bots:
-            self.world.queue_interaction(bot.get_interaction())
-        
-        # ФАЗА 5: Применение взаимодействий (последовательно!)
         self.world.process_interactions()
         self.world.remove_dead_bots()
-        
-        # Периодические обновления
+
         if self.world.tick % 250 == 0:
             self.world.update_cells_energy()
-        
+
         if self.world.tick % 1000 == 0:
             self._update_statistics()
     
     def _run_bots_parallel(self):
-        """Запустить ботов через ProcessPoolExecutor"""
+        """Запустить ботов: vision + execute + сбор взаимодействий (параллельно)."""
         bots = [b for b in self.world.bots if b.alive and b.energy > 0]
         if not bots:
             return
 
-        # Порог: если ботов мало, параллельность не окупается
         PARALLEL_THRESHOLD = 50
         if len(bots) < PARALLEL_THRESHOLD:
+            # Sequential fallback — один проход вместо трёх
             for bot in bots:
+                self.world.update_vision_for_bot(bot)
                 bot.run()
+                self.world.queue_interaction(bot.get_interaction())
             return
 
         num_workers = multiprocessing.cpu_count()
+        w, h = self.world.width, self.world.height
 
-        # Сериализация состояния ботов для воркеров
+        # Слепок карты для vision (0=empty, 1=occupied)
+        map_flat = bytearray(w * h)
+        for y in range(h):
+            for x in range(w):
+                cell = self.world.map.get_cell(x, y)
+                map_flat[y * w + x] = 1 if cell.contains else 0
+
+        # Сериализация ботов для воркеров (с x,y для vision)
         bot_dicts = [{
             'id': bot.id,
             'opcodes': bot.genome.opcodes,
@@ -123,12 +147,15 @@ class SimulationService:
             'registers': bot.genome.registers[:],
             'energy': bot.energy,
             'max_ticks': bot.genome.max_ticks,
+            'x': bot.x,
+            'y': bot.y,
         } for bot in bots]
 
-        chunk_size = max(1, len(bot_dicts) // (num_workers * 2))  # 2x workers для лучшей загрузки
+        chunk_size = max(1, len(bot_dicts) // (num_workers * 2))
         chunks = [bot_dicts[i:i+chunk_size] for i in range(0, len(bot_dicts), chunk_size)]
 
-        futures = [self._executor.submit(_execute_bot_chunk, chunk, 3) for chunk in chunks]
+        futures = [self._executor.submit(
+            _execute_chunk, ch, bytes(map_flat), w, h) for ch in chunks]
 
         # Собрать результаты
         id_to_bot = {bot.id: bot for bot in bots}
@@ -136,10 +163,17 @@ class SimulationService:
             for result in future.result():
                 bot = id_to_bot.get(result['id'])
                 if bot:
-                    bot.genome.registers[:] = result['registers']  # in-place update
+                    bot.genome.registers[:] = result['registers']
                     bot.energy = result['energy']
                     bot.alive = result['alive']
                     bot.age += 1
+                    if result['interaction']:
+                        interaction = result['interaction']
+                        self.world.queue_interaction(
+                            Interaction(bot,
+                                       interaction['direction'],
+                                       interaction['type'],
+                                       interaction['strength']))
 
     def _spawn_bots_if_needed(self):
         """Спавн новых ботов если их слишком мало"""
