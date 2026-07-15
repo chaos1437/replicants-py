@@ -12,12 +12,14 @@ logger = logging.getLogger(__name__)
 def _execute_chunk(bots_data: list[dict],
                    map_flat: bytes,
                    map_width: int,
-                   map_height: int) -> list[dict]:
+                   map_height: int,
+                   programs: dict[int, tuple]) -> list[dict]:
     """Один parallel проход: vision + execute + сбор взаимодействия.
 
-    bots_data: list of dicts with id, opcodes, jumps, registers, energy, max_ticks, x, y
+    bots_data: list of dicts с полями id, prog_id, registers, energy, max_ticks, x, y
     map_flat: bytes length=width*height, 0=empty, 1=occupied
     map_width, map_height: размеры карты
+    programs: dict {prog_id: (opcodes, jumps)} — дедуплицированные программы
 
     Returns: list of dicts с id, registers, energy, alive, interaction|None
     """
@@ -28,6 +30,7 @@ def _execute_chunk(bots_data: list[dict],
         rid = bot['id']
         regs = bot['registers']
         x, y = bot['x'], bot['y']
+        opcodes, jumps = programs[bot['prog_id']]
 
         # ═══ VISION ═══
         for dx, dy, reg in Genome.SENSOR_REGISTERS:
@@ -40,14 +43,13 @@ def _execute_chunk(bots_data: list[dict],
 
         # ═══ EXECUTE ═══
         regs[REG_ENERGY] = bot['energy']
-        Genome.execute(bot['opcodes'], bot['jumps'], regs, bot['max_ticks'])
+        Genome.execute(opcodes, jumps, regs, bot['max_ticks'])
         energy = regs[REG_ENERGY]
         alive = energy > 0
 
         # ═══ INTERACTION ═══
         interaction = None
         if alive:
-            # direction из registers[0:4]
             max_val = 0
             max_idx = -1
             for i in range(5):
@@ -139,11 +141,19 @@ class SimulationService:
                 cell = self.world.map.get_cell(x, y)
                 map_flat[y * w + x] = 1 if cell.contains else 0
 
-        # Сериализация ботов для воркеров (с x,y для vision)
+        # Дедупликация opcodes/jumps через кэш: одинаковые программы —
+        # один раз в program_table, боты ссылаются по prog_id
+        prog_to_pid = {}
+        program_table = []  # [(opcodes, jumps), ...], индекс = prog_id
+        for bot in bots:
+            prog = bot.genome.opcodes
+            if prog not in prog_to_pid:
+                prog_to_pid[prog] = len(program_table)
+                program_table.append((prog, bot.genome.jumps))
+
         bot_dicts = [{
             'id': bot.id,
-            'opcodes': bot.genome.opcodes,
-            'jumps': bot.genome.jumps,
+            'prog_id': prog_to_pid[bot.genome.opcodes],
             'registers': bot.genome.registers[:],
             'energy': bot.energy,
             'max_ticks': bot.genome.max_ticks,
@@ -154,8 +164,15 @@ class SimulationService:
         chunk_size = max(1, len(bot_dicts) // (num_workers * 2))
         chunks = [bot_dicts[i:i+chunk_size] for i in range(0, len(bot_dicts), chunk_size)]
 
+        # Для каждого чанка — только те программы, что используются
+        import functools
+        def _make_chunk_args(ch):
+            used_ids = set(b['prog_id'] for b in ch)
+            chunk_progs = {pid: program_table[pid] for pid in used_ids}
+            return (ch, bytes(map_flat), w, h, chunk_progs)
+
         futures = [self._executor.submit(
-            _execute_chunk, ch, bytes(map_flat), w, h) for ch in chunks]
+            _execute_chunk, *_make_chunk_args(ch)) for ch in chunks]
 
         # Собрать результаты
         id_to_bot = {bot.id: bot for bot in bots}

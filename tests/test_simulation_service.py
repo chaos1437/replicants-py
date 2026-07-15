@@ -151,14 +151,17 @@ class TestRunBotsParallel:
 class TestExecuteChunk:
     """Tests for module-level _execute_chunk function"""
 
+    def _make_programs(self, *programs_list):
+        """Helper: list of opcodes/jumps tuples → programs dict"""
+        return {i: (op, jp) for i, (op, jp) in enumerate(programs_list)}
+
     def test_execute_chunk_simple(self):
-        """Один бот, программа +++, registers[0] == 3 после выполнения, alive=True"""
+        """Один бот, программа +++, registers[0] == 3, alive=True"""
         opcodes, jumps = Genome.compile_program(["+", "+", "+"])
         bot_data = [
             {
                 "id": 1,
-                "opcodes": opcodes,
-                "jumps": jumps,
+                "prog_id": 0,
                 "registers": bytearray(24),
                 "energy": 255,
                 "max_ticks": 512,
@@ -166,9 +169,10 @@ class TestExecuteChunk:
                 "y": 5,
             }
         ]
-        map_flat = bytes(10 * 10)  # 10x10, все пустые
+        programs = self._make_programs((opcodes, jumps))
+        map_flat = bytes(10 * 10)
 
-        results = _execute_chunk(bot_data, map_flat, 10, 10)
+        results = _execute_chunk(bot_data, map_flat, 10, 10, programs)
 
         assert len(results) == 1
         assert results[0]["registers"][0] == 3
@@ -180,8 +184,7 @@ class TestExecuteChunk:
         bot_data = [
             {
                 "id": 2,
-                "opcodes": opcodes,
-                "jumps": jumps,
+                "prog_id": 0,
                 "registers": bytearray(24),
                 "energy": 0,
                 "max_ticks": 512,
@@ -189,9 +192,10 @@ class TestExecuteChunk:
                 "y": 0,
             }
         ]
+        programs = self._make_programs((opcodes, jumps))
         map_flat = bytes(10 * 10)
 
-        results = _execute_chunk(bot_data, map_flat, 10, 10)
+        results = _execute_chunk(bot_data, map_flat, 10, 10, programs)
 
         assert len(results) == 1
         assert results[0]["alive"] is False
@@ -202,8 +206,7 @@ class TestExecuteChunk:
         bot_data = [
             {
                 "id": 3,
-                "opcodes": opcodes,
-                "jumps": jumps,
+                "prog_id": 0,
                 "registers": bytearray(24),
                 "energy": 255,
                 "max_ticks": 512,
@@ -211,27 +214,25 @@ class TestExecuteChunk:
                 "y": 5,
             }
         ]
-        # Клетка слева (4,5) занята
+        programs = self._make_programs((opcodes, jumps))
         map_flat = bytearray(10 * 10)
         map_flat[5 * 10 + 4] = 1
 
-        results = _execute_chunk(bot_data, bytes(map_flat), 10, 10)
+        results = _execute_chunk(bot_data, bytes(map_flat), 10, 10, programs)
 
-        # SENSOR_REGISTERS[0] = (-1, 0, 5) — левая клетка → репликант
         assert results[0]["registers"][5] == 1
 
     def test_execute_chunk_interaction(self):
         """Interaction: registers[11]=1, strength=50 → interaction в результате"""
         opcodes, jumps = Genome.compile_program([])
         regs = bytearray(24)
-        regs[11] = 1   # REG_INTERACTION_TYPE
-        regs[12] = 50  # REG_INTERACTION_STRENGTH
-        regs[0] = 5    # direction (max из 0..4)
+        regs[11] = 1
+        regs[12] = 50
+        regs[0] = 5
         bot_data = [
             {
                 "id": 4,
-                "opcodes": opcodes,
-                "jumps": jumps,
+                "prog_id": 0,
                 "registers": regs,
                 "energy": 255,
                 "max_ticks": 512,
@@ -239,9 +240,10 @@ class TestExecuteChunk:
                 "y": 0,
             }
         ]
+        programs = self._make_programs((opcodes, jumps))
         map_flat = bytes(10 * 10)
 
-        results = _execute_chunk(bot_data, map_flat, 10, 10)
+        results = _execute_chunk(bot_data, map_flat, 10, 10, programs)
 
         assert results[0]["interaction"] is not None
         assert results[0]["interaction"]["type"] == 1
