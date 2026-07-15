@@ -7,7 +7,7 @@ from core.bot import Bot, Genome
 from core.world import World
 from core.world_map import WorldMap
 from config.settings import GenomeConfig, WorldConfig, SimulationConfig
-from services.simulation_service import SimulationService, _execute_chunk
+from services.simulation_service import SimulationService, _execute_chunk_shm
 
 
 @pytest.fixture
@@ -152,100 +152,110 @@ class TestExecuteChunk:
     """Tests for module-level _execute_chunk function"""
 
     def _make_programs(self, *programs_list):
-        """Helper: list of opcodes/jumps tuples → programs dict"""
         return {i: (op, jp) for i, (op, jp) in enumerate(programs_list)}
 
     def test_execute_chunk_simple(self):
         """Один бот, программа +++, registers[0] == 3, alive=True"""
+        from multiprocessing import shared_memory
+
         opcodes, jumps = Genome.compile_program(["+", "+", "+"])
-        bot_data = [
-            {
-                "id": 1,
-                "prog_id": 0,
-                "registers": bytearray(24),
-                "energy": 255,
-                "max_ticks": 512,
-                "x": 5,
-                "y": 5,
-            }
-        ]
-        programs = self._make_programs((opcodes, jumps))
-        map_flat = bytes(10 * 10)
+        shm = shared_memory.SharedMemory(create=True, size=24)
+        try:
+            # Записать начальное состояние регистров в shm
+            shm.buf[0:24] = bytearray(24)
+            shm.buf[Genome.REG_ENERGY] = 255
 
-        results = _execute_chunk(bot_data, map_flat, 10, 10, programs)
+            bot_meta = [
+                {"idx": 0, "prog_id": 0, "max_ticks": 512, "x": 5, "y": 5}
+            ]
+            programs = self._make_programs((opcodes, jumps))
+            map_flat = bytes(10 * 10)
 
-        assert len(results) == 1
-        assert results[0]["registers"][0] == 3
-        assert results[0]["alive"] is True
+            results = _execute_chunk_shm(bot_meta, map_flat, 10, 10, programs, shm.name)
+
+            assert len(results) == 1
+            assert results[0]["alive"] is True
+            # Прочитать registers из shm
+            assert shm.buf[0] == 3
+        finally:
+            shm.close()
+            shm.unlink()
 
     def test_execute_chunk_dead(self):
         """energy=0 → alive=False"""
+        from multiprocessing import shared_memory
+
         opcodes, jumps = Genome.compile_program(["+", "+", "+"])
-        bot_data = [
-            {
-                "id": 2,
-                "prog_id": 0,
-                "registers": bytearray(24),
-                "energy": 0,
-                "max_ticks": 512,
-                "x": 0,
-                "y": 0,
-            }
-        ]
-        programs = self._make_programs((opcodes, jumps))
-        map_flat = bytes(10 * 10)
+        shm = shared_memory.SharedMemory(create=True, size=24)
+        try:
+            shm.buf[0:24] = bytearray(24)
+            shm.buf[Genome.REG_ENERGY] = 0  # energy=0 → dead
 
-        results = _execute_chunk(bot_data, map_flat, 10, 10, programs)
+            bot_meta = [
+                {"idx": 0, "prog_id": 0, "max_ticks": 512, "x": 0, "y": 0}
+            ]
+            programs = self._make_programs((opcodes, jumps))
+            map_flat = bytes(10 * 10)
 
-        assert len(results) == 1
-        assert results[0]["alive"] is False
+            results = _execute_chunk_shm(bot_meta, map_flat, 10, 10, programs, shm.name)
+
+            assert len(results) == 1
+            assert results[0]["alive"] is False
+        finally:
+            shm.close()
+            shm.unlink()
 
     def test_execute_chunk_vision(self):
         """Vision: соседняя клетка с ботом → register[5]=1"""
+        from multiprocessing import shared_memory
+
         opcodes, jumps = Genome.compile_program([])
-        bot_data = [
-            {
-                "id": 3,
-                "prog_id": 0,
-                "registers": bytearray(24),
-                "energy": 255,
-                "max_ticks": 512,
-                "x": 5,
-                "y": 5,
-            }
-        ]
-        programs = self._make_programs((opcodes, jumps))
-        map_flat = bytearray(10 * 10)
-        map_flat[5 * 10 + 4] = 1
+        shm = shared_memory.SharedMemory(create=True, size=24)
+        try:
+            shm.buf[0:24] = bytearray(24)
+            shm.buf[Genome.REG_ENERGY] = 255
 
-        results = _execute_chunk(bot_data, bytes(map_flat), 10, 10, programs)
+            bot_meta = [
+                {"idx": 0, "prog_id": 0, "max_ticks": 512, "x": 5, "y": 5}
+            ]
+            programs = self._make_programs((opcodes, jumps))
+            map_flat = bytearray(10 * 10)
+            map_flat[5 * 10 + 4] = 1  # клетка слева (4,5) занята
 
-        assert results[0]["registers"][5] == 1
+            results = _execute_chunk_shm(bot_meta, bytes(map_flat), 10, 10, programs, shm.name)
+
+            # SENSOR_REGISTERS[0] = (-1, 0, 5) — левая клетка → репликант
+            assert shm.buf[5] == 1
+        finally:
+            shm.close()
+            shm.unlink()
 
     def test_execute_chunk_interaction(self):
         """Interaction: registers[11]=1, strength=50 → interaction в результате"""
+        from multiprocessing import shared_memory
+
         opcodes, jumps = Genome.compile_program([])
-        regs = bytearray(24)
-        regs[11] = 1
-        regs[12] = 50
-        regs[0] = 5
-        bot_data = [
-            {
-                "id": 4,
-                "prog_id": 0,
-                "registers": regs,
-                "energy": 255,
-                "max_ticks": 512,
-                "x": 0,
-                "y": 0,
-            }
-        ]
-        programs = self._make_programs((opcodes, jumps))
-        map_flat = bytes(10 * 10)
+        shm = shared_memory.SharedMemory(create=True, size=24)
+        try:
+            regs = bytearray(24)
+            regs[11] = 1
+            regs[12] = 50
+            regs[0] = 5  # direction
+            shm.buf[0:24] = regs
+            shm.buf[Genome.REG_ENERGY] = 255
 
-        results = _execute_chunk(bot_data, map_flat, 10, 10, programs)
+            bot_meta = [
+                {"idx": 0, "prog_id": 0, "max_ticks": 512, "x": 0, "y": 0}
+            ]
+            programs = self._make_programs((opcodes, jumps))
+            map_flat = bytes(10 * 10)
 
-        assert results[0]["interaction"] is not None
-        assert results[0]["interaction"]["type"] == 1
-        assert results[0]["interaction"]["strength"] == 50
-        assert results[0]["interaction"]["direction"] == 0
+            results = _execute_chunk_shm(bot_meta, map_flat, 10, 10, programs, shm.name)
+
+            assert results[0]["interaction"] is not None
+            assert results[0]["interaction"]["type"] == 1
+            assert results[0]["interaction"]["strength"] == 50
+            assert results[0]["interaction"]["direction"] == 0
+        finally:
+            shm.close()
+            shm.unlink()

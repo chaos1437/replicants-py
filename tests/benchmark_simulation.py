@@ -88,14 +88,14 @@ def benchmark_genome_execute():
         
         # Прогрев
         for _ in range(100):
-            genome.execute()
+            Genome.execute(genome.opcodes, genome.jumps, genome.registers, genome.max_ticks)
         
         # Замер
         trials = 1000
         start = time.perf_counter()
         for _ in range(trials):
-            genome.registers = [0] * 24
-            genome.execute()
+            genome.registers = bytearray(24)
+            Genome.execute(genome.opcodes, genome.jumps, genome.registers, genome.max_ticks)
         elapsed = time.perf_counter() - start
         
         results[name] = {
@@ -132,33 +132,20 @@ def benchmark_tick_phases(bot_count: int = 200):
     for _ in range(5):
         service.tick()
     
-    phases = {'spawn': 0, 'vision': 0, 'run': 0, 'queue': 0, 'process': 0, 'remove': 0}
+    phases = {'spawn': 0, 'serialize': 0, 'parallel_run': 0,
+               'apply_results': 0, 'process': 0, 'remove': 0}
     iterations = 20
     
     for _ in range(iterations):
-        # Фаза 1
         t0 = time.perf_counter()
         service._spawn_bots_if_needed()
         phases['spawn'] += time.perf_counter() - t0
         
-        # Фаза 2
-        t0 = time.perf_counter()
-        for bot in service.world.bots:
-            service.world.update_vision_for_bot(bot)
-        phases['vision'] += time.perf_counter() - t0
-        
-        # Фаза 3
+        # Измеряем _run_bots_parallel детально (без доступа кнутри — через профилирование)
         t0 = time.perf_counter()
         service._run_bots_parallel()
-        phases['run'] += time.perf_counter() - t0
+        phases['parallel_run'] += time.perf_counter() - t0
         
-        # Фаза 4
-        t0 = time.perf_counter()
-        for bot in service.world.bots:
-            service.world.queue_interaction(bot.get_interaction())
-        phases['queue'] += time.perf_counter() - t0
-        
-        # Фаза 5
         t0 = time.perf_counter()
         service.world.process_interactions()
         phases['process'] += time.perf_counter() - t0
