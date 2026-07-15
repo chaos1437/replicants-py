@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 
 from aiohttp import web
+from aiohttp.client_exceptions import ClientConnectionResetError
 
 from config.settings import load_config
 from core.world import World
@@ -170,6 +171,13 @@ async def ws_handler(request):
     sim: SimState = request.app['sim']
     loop = asyncio.get_event_loop()
 
+    async def safe_send(data):
+        """Отправить JSON, не падать если клиент отключился"""
+        try:
+            await ws.send_json(data)
+        except (ConnectionResetError, ClientConnectionResetError):
+            pass
+
     async def send_state():
         """Собрать и отправить состояние симуляции клиенту"""
         state = sim.provider.get_world_state()
@@ -189,7 +197,7 @@ async def ws_handler(request):
                     'energy': b['energy'], 'alive': b['alive'],
                 })
 
-        await ws.send_json({
+        await safe_send({
             'type': 'state',
             'width': w,
             'height': h,
