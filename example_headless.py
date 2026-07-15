@@ -71,7 +71,7 @@ def main():
     except KeyboardInterrupt:
         logger.info("Simulation interrupted by user")
     finally:
-        # Сохранение состояния
+        service.stop()
         logger.info(f"Saving world to {config.save_file}")
         WorldSerializer.save(world, config.save_file)
         logger.info("Simulation ended")

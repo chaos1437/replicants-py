@@ -1,6 +1,5 @@
 """Симуляция с консольным рендером"""
 import logging
-import time
 from pathlib import Path
 
 from config.settings import load_config
@@ -69,22 +68,12 @@ def main():
     # Основной цикл с рендерингом
     try:
         while True:
-            # Выполнить тик симуляции
             service.tick()
-            
-            # Отрисовать
             renderer.render()
-            
-            # # Задержка для читаемости
-            # if config.wait_time > 0:
-            #     time.sleep(config.wait_time)
-            # else:
-            #     time.sleep(0.1)  # Минимальная задержка для консоли
-            
     except KeyboardInterrupt:
         logger.info("Simulation interrupted by user")
     finally:
-        # Сохранение состояния
+        service.stop()
         logger.info(f"Saving world to {config.save_file}")
         WorldSerializer.save(world, config.save_file)
         print("\nСимуляция завершена. Мир сохранен.")

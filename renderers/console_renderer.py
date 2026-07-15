@@ -1,5 +1,4 @@
 """Простой консольный рендер для симуляции"""
-import os
 import sys
 
 
@@ -14,8 +13,9 @@ class ConsoleRenderer:
         self.state_provider = state_provider
     
     def clear_screen(self):
-        """Очистить экран"""
-        os.system('clear' if os.name != 'nt' else 'cls')
+        """Очистить экран (ANSI escape — без форка процесса)"""
+        sys.stdout.write('\033[2J\033[H')
+        sys.stdout.flush()
     
     def render(self):
         """Отрисовать текущее состояние мира"""
