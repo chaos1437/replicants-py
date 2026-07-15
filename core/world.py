@@ -25,7 +25,9 @@ class World:
         free_cell = self.map.get_free_cell()
         if free_cell:
             bot.x, bot.y = free_cell.x, free_cell.y
-            self.map.get_cell(bot.x, bot.y).set(bot)
+            cell = self.map.get_cell(bot.x, bot.y)
+            cell.set(bot)
+            self.map.occupy_cell(cell)
             self.bots.append(bot)
             return True
         logger.warning("Failed to spawn bot: no free cells")
@@ -48,7 +50,6 @@ class World:
         
         if self.tick % 100 == 0:
             logger.info(f"Tick {self.tick} completed, interactions processed")
-            self.check_consistency()
     
     def remove_dead_bots(self):
         """Удалить мертвых ботов"""
@@ -62,6 +63,7 @@ class World:
         if cell and cell.contains == bot:
             cell.contains = None
             cell.add_energy(max(0, bot.energy) // 2)
+            self.map.release_cell(cell)
         if bot in self.bots:
             self.bots.remove(bot)
     

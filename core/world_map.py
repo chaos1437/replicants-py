@@ -38,6 +38,7 @@ class WorldMap:
         self.width = width
         self.height = height
         self.map = [[Cell(x, y) for x in range(width)] for y in range(height)]
+        self.free_cells: set[Cell] = {cell for row in self.map for cell in row}
         logger.info(f"WorldMap initialized with width {width} and height {height}")
     
     def get_cell(self, x: int, y: int) -> "Cell | None":
@@ -62,6 +63,17 @@ class WorldMap:
             temp.y = another_cell.y
         
         another_cell.contains = temp
+        
+        # Обновить free_cells
+        if first_cell.contains is None:
+            self.free_cells.add(first_cell)
+        else:
+            self.free_cells.discard(first_cell)
+        
+        if another_cell.contains is None:
+            self.free_cells.add(another_cell)
+        else:
+            self.free_cells.discard(another_cell)
     
     def move(self, x: int, y: int, x1: int, y1: int):
         """Переместить содержимое из (x, y) в (x1, y1)"""
@@ -72,18 +84,17 @@ class WorldMap:
     
     def get_free_cell(self):
         """Найти свободную ячейку"""
-        # 20 попыток найти случайную свободную ячейку
-        for _ in range(20):
-            x = random.randint(0, self.width - 1)
-            y = random.randint(0, self.height - 1)
-            if self.get_cell(x, y).contains is None:
-                return self.get_cell(x, y)
-        
-        # Если не нашли, перебираем все
-        for y in range(self.height):
-            for x in range(self.width):
-                if self.get_cell(x, y).contains is None:
-                    return self.get_cell(x, y)
-        
-        logger.warning("No free cells found")
-        return None
+        if not self.free_cells:
+            logger.warning("No free cells found")
+            return None
+        cell = random.choice(list(self.free_cells))
+        return cell
+    
+    def occupy_cell(self, cell: Cell):
+        """Пометить ячейку как занятую"""
+        self.free_cells.discard(cell)
+    
+    def release_cell(self, cell: Cell):
+        """Пометить ячейку как свободную"""
+        if cell.contains is None:
+            self.free_cells.add(cell)
